@@ -97,7 +97,7 @@ struct ContentView: View {
         let completions: [Int: Int] = databaseManager.recentCompletions[habit.id] ?? [:]
 
         NavigationLink(
-            destination: HabitDetailView(habitId: habit.id)
+            destination: HabitDetailView(habit: habit)
                 .environmentObject(databaseManager)
         ) {
             HabitRowView(

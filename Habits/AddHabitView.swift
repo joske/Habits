@@ -27,7 +27,7 @@ struct AddHabitView: View {
                         .autocorrectionDisabled()
 
                     TextField("Question", text: $question)
-                        .textInputAutocapitalization(.words)
+                        .textInputAutocapitalization(.none)
                         .autocorrectionDisabled()
 
 

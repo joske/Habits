@@ -29,14 +29,17 @@ class DatabaseManager: ObservableObject {
     private let dbPath: String
 
     @Published var habits: [Habit] = []
-    @Published var todayRepetitions: [Int: Repetition] = [:] // habit_id -> repetition
+    @Published var todayRepetitions: [Int: Repetition] = [:]  // habit_id -> repetition
     // Map: habitId -> (dayOffset -> value)
     // dayOffset: 0 = today, 1 = yesterday, ...
     @Published var recentCompletions: [Int: [Int: Int]] = [:]
 
     init() {
         let fileURL = try! FileManager.default
-            .url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+            .url(
+                for: .documentDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: false
+            )
             .appendingPathComponent("habits.db")
 
         dbPath = fileURL.path
@@ -119,11 +122,22 @@ class DatabaseManager: ObservableObject {
             on Repetitions(habit, timestamp);
             """
 
-        if sqlite3_exec(db, createHabitsTable, nil, nil, nil) != SQLITE_OK { print("Unable to create Habits table") }
-        if sqlite3_exec(db, createRepetitionsTable, nil, nil, nil) != SQLITE_OK { print("Unable to create Repetitions table") }
-        if sqlite3_exec(db, createEventsTable, nil, nil, nil) != SQLITE_OK { print("Unable to create Events table") }
-        if sqlite3_exec(db, createMetadataTable, nil, nil, nil) != SQLITE_OK { print("Unable to create Metadata table") }
-        if sqlite3_exec(db, createIndex, nil, nil, nil) != SQLITE_OK { print("Unable to create index") }
+        if sqlite3_exec(db, createHabitsTable, nil, nil, nil) != SQLITE_OK {
+            print("Unable to create Habits table")
+        }
+        if sqlite3_exec(db, createRepetitionsTable, nil, nil, nil) != SQLITE_OK
+        {
+            print("Unable to create Repetitions table")
+        }
+        if sqlite3_exec(db, createEventsTable, nil, nil, nil) != SQLITE_OK {
+            print("Unable to create Events table")
+        }
+        if sqlite3_exec(db, createMetadataTable, nil, nil, nil) != SQLITE_OK {
+            print("Unable to create Metadata table")
+        }
+        if sqlite3_exec(db, createIndex, nil, nil, nil) != SQLITE_OK {
+            print("Unable to create index")
+        }
     }
 
     // MARK: - Import external DB
@@ -149,15 +163,22 @@ class DatabaseManager: ObservableObject {
 
     private func validateDatabase(at url: URL) throws {
         var tempDB: OpaquePointer?
-        guard sqlite3_open_v2(url.path, &tempDB, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, tempDB != nil else {
+        guard
+            sqlite3_open_v2(url.path, &tempDB, SQLITE_OPEN_READONLY, nil)
+                == SQLITE_OK, tempDB != nil
+        else {
             throw DBImportError.openFailed
         }
         defer { sqlite3_close(tempDB) }
 
         // integrity_check
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(tempDB, "PRAGMA integrity_check;", -1, &stmt, nil) == SQLITE_OK else {
-            throw DBImportError.invalidDatabase("prepare integrity_check failed")
+        guard
+            sqlite3_prepare_v2(
+                tempDB, "PRAGMA integrity_check;", -1, &stmt, nil) == SQLITE_OK
+        else {
+            throw DBImportError.invalidDatabase(
+                "prepare integrity_check failed")
         }
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_step(stmt) == SQLITE_ROW else {
@@ -171,17 +192,25 @@ class DatabaseManager: ObservableObject {
         }
 
         // Minimal schema check for Habits
-        try assertHasTable(tempDB, "Habits", requiredColumns: [
-            "Id","name","description","question",
-            "freq_den","freq_num","type","target_type","target_value","unit"
-        ])
+        try assertHasTable(
+            tempDB,
+            "Habits",
+            requiredColumns: [
+                "Id", "name", "description", "question",
+                "freq_den", "freq_num", "type", "target_type", "target_value",
+                "unit",
+            ]
+        )
     }
 
-    private func assertHasTable(_ db: OpaquePointer?, _ table: String, requiredColumns: [String]) throws {
+    private func assertHasTable(
+        _ db: OpaquePointer?, _ table: String, requiredColumns: [String]
+    ) throws {
         var stmt: OpaquePointer?
         let sql = "PRAGMA table_info(\(table));"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw DBImportError.schemaMismatch("could not read table_info(\(table))")
+            throw DBImportError.schemaMismatch(
+                "could not read table_info(\(table))")
         }
         defer { sqlite3_finalize(stmt) }
 
@@ -193,7 +222,8 @@ class DatabaseManager: ObservableObject {
         }
         let missing = Set(requiredColumns).subtracting(found)
         if !missing.isEmpty {
-            throw DBImportError.schemaMismatch("missing columns: \(missing.sorted().joined(separator: ", "))")
+            throw DBImportError.schemaMismatch(
+                "missing columns: \(missing.sorted().joined(separator: ", "))")
         }
     }
 
@@ -202,19 +232,25 @@ class DatabaseManager: ObservableObject {
         let src = appDBURL
         guard fm.fileExists(atPath: src.path) else { return }
 
-        let ts = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let backup = src.deletingLastPathComponent().appendingPathComponent("habits-backup-\(ts).db")
+        let ts = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let backup = src.deletingLastPathComponent().appendingPathComponent(
+            "habits-backup-\(ts).db")
         try? fm.removeItem(at: backup)
-        do { try fm.copyItem(at: src, to: backup) } catch { throw DBImportError.copyFailed(error.localizedDescription) }
+        do { try fm.copyItem(at: src, to: backup) } catch {
+            throw DBImportError.copyFailed(error.localizedDescription)
+        }
 
         let wal = src.deletingPathExtension().appendingPathExtension("db-wal")
         let shm = src.deletingPathExtension().appendingPathExtension("db-shm")
         if fm.fileExists(atPath: wal.path) {
-            let backupWAL = backup.deletingPathExtension().appendingPathExtension("db-wal")
+            let backupWAL = backup.deletingPathExtension()
+                .appendingPathExtension("db-wal")
             try? fm.copyItem(at: wal, to: backupWAL)
         }
         if fm.fileExists(atPath: shm.path) {
-            let backupSHM = backup.deletingPathExtension().appendingPathExtension("db-shm")
+            let backupSHM = backup.deletingPathExtension()
+                .appendingPathExtension("db-shm")
             try? fm.copyItem(at: shm, to: backupSHM)
         }
     }
@@ -234,8 +270,9 @@ class DatabaseManager: ObservableObject {
         try? fm.removeItem(at: shm)
 
         // Copy main DB
-        do { try fm.copyItem(at: srcURL, to: dst) }
-        catch { throw DBImportError.copyFailed(error.localizedDescription) }
+        do { try fm.copyItem(at: srcURL, to: dst) } catch {
+            throw DBImportError.copyFailed(error.localizedDescription)
+        }
 
         // Copy sibling -wal / -shm if present (source folder)
         let base = srcURL.deletingPathExtension().lastPathComponent
@@ -243,11 +280,13 @@ class DatabaseManager: ObservableObject {
         let srcWAL = dir.appendingPathComponent(base + "-wal")
         let srcSHM = dir.appendingPathComponent(base + "-shm")
         if fm.fileExists(atPath: srcWAL.path) {
-            let dstWAL = dst.deletingPathExtension().appendingPathExtension("db-wal")
+            let dstWAL = dst.deletingPathExtension().appendingPathExtension(
+                "db-wal")
             _ = try? fm.copyItem(at: srcWAL, to: dstWAL)
         }
         if fm.fileExists(atPath: srcSHM.path) {
-            let dstSHM = dst.deletingPathExtension().appendingPathExtension("db-shm")
+            let dstSHM = dst.deletingPathExtension().appendingPathExtension(
+                "db-shm")
             _ = try? fm.copyItem(at: srcSHM, to: dstSHM)
         }
     }
@@ -255,7 +294,10 @@ class DatabaseManager: ObservableObject {
     /// Returns binary data of a consistent DB snapshot.
     func exportDatabaseData() throws -> Data {
         // 1) Create a temp file
-        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent("habits-export-\(UUID().uuidString).db")
+        let tmpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "habits-export-\(UUID().uuidString).db"
+            )
         // 2) Copy DB into temp using the SQLite backup API
         try backupDatabase(to: tmpURL.path)
         // 3) Read bytes
@@ -269,13 +311,26 @@ class DatabaseManager: ObservableObject {
     private func backupDatabase(to destPath: String) throws {
         var destDB: OpaquePointer?
         guard sqlite3_open(destPath, &destDB) == SQLITE_OK else {
-            throw NSError(domain: "DBExport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open destination DB"])
+            throw NSError(
+                domain: "DBExport",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Could not open destination DB"
+                ]
+            )
         }
         defer { sqlite3_close(destDB) }
 
-        guard let backup = sqlite3_backup_init(destDB, "main", db, "main") else {
+        guard let backup = sqlite3_backup_init(destDB, "main", db, "main")
+        else {
             let msg = String(cString: sqlite3_errmsg(destDB))
-            throw NSError(domain: "DBExport", code: 2, userInfo: [NSLocalizedDescriptionKey: "backup_init failed: \(msg)"])
+            throw NSError(
+                domain: "DBExport",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "backup_init failed: \(msg)"
+                ]
+            )
         }
         // Copy all pages (-1)
         let stepRC = sqlite3_backup_step(backup, -1)
@@ -283,7 +338,14 @@ class DatabaseManager: ObservableObject {
 
         guard stepRC == SQLITE_DONE else {
             let msg = String(cString: sqlite3_errmsg(destDB))
-            throw NSError(domain: "DBExport", code: 3, userInfo: [NSLocalizedDescriptionKey: "backup_step failed: \(stepRC) \(msg)"])
+            throw NSError(
+                domain: "DBExport",
+                code: 3,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "backup_step failed: \(stepRC) \(msg)"
+                ]
+            )
         }
     }
     // MARK: - Queries
@@ -311,9 +373,10 @@ class DatabaseManager: ObservableObject {
     }
 
     private enum HabitCol: Int32 {
-        case id = 0, archived, color, description, freqDen, freqNum, highlight, name,
-             position, reminderDays, reminderHour, reminderMin, type, targetType,
-             targetValue, unit, question, uuid
+        case id = 0
+        case archived, color, description, freqDen, freqNum, highlight, name,
+            position, reminderDays, reminderHour, reminderMin, type, targetType,
+            targetValue, unit, question, uuid
     }
 
     private func habitFromRow(_ stmt: OpaquePointer!) -> Habit {
@@ -321,21 +384,32 @@ class DatabaseManager: ObservableObject {
             id: Int(sqlite3_column_int(stmt, HabitCol.id.rawValue)),
             archived: Int(sqlite3_column_int(stmt, HabitCol.archived.rawValue)),
             color: Int(sqlite3_column_int(stmt, HabitCol.color.rawValue)),
-            description: getString(statement: stmt, index: HabitCol.description.rawValue),
+            description: getString(
+                statement: stmt, index: HabitCol.description.rawValue),
             freqDen: Int(sqlite3_column_int(stmt, HabitCol.freqDen.rawValue)),
             freqNum: Int(sqlite3_column_int(stmt, HabitCol.freqNum.rawValue)),
-            highlight: Int(sqlite3_column_int(stmt, HabitCol.highlight.rawValue)),
-            name: getString(statement: stmt, index: HabitCol.name.rawValue) ?? "Unknown",
+            highlight: Int(
+                sqlite3_column_int(stmt, HabitCol.highlight.rawValue)),
+            name: getString(statement: stmt, index: HabitCol.name.rawValue)
+                ?? "Unknown",
             position: Int(sqlite3_column_int(stmt, HabitCol.position.rawValue)),
-            reminderDays: Int(sqlite3_column_int(stmt, HabitCol.reminderDays.rawValue)),
-            reminderHour: getInt(statement: stmt, index: HabitCol.reminderHour.rawValue),
-            reminderMin: getInt(statement: stmt, index: HabitCol.reminderMin.rawValue),
+            reminderDays: Int(
+                sqlite3_column_int(stmt, HabitCol.reminderDays.rawValue)),
+            reminderHour: getInt(
+                statement: stmt, index: HabitCol.reminderHour.rawValue),
+            reminderMin: getInt(
+                statement: stmt, index: HabitCol.reminderMin.rawValue),
             type: Int(sqlite3_column_int(stmt, HabitCol.type.rawValue)),
-            targetType: Int(sqlite3_column_int(stmt, HabitCol.targetType.rawValue)),
-            targetValue: sqlite3_column_double(stmt, HabitCol.targetValue.rawValue),
-            unit: getString(statement: stmt, index: HabitCol.unit.rawValue) ?? "",
-            question: getString(statement: stmt, index: HabitCol.question.rawValue),
-            uuid: getString(statement: stmt, index: HabitCol.uuid.rawValue) ?? ""
+            targetType: Int(
+                sqlite3_column_int(stmt, HabitCol.targetType.rawValue)),
+            targetValue: sqlite3_column_double(
+                stmt, HabitCol.targetValue.rawValue),
+            unit: getString(statement: stmt, index: HabitCol.unit.rawValue)
+                ?? "",
+            question: getString(
+                statement: stmt, index: HabitCol.question.rawValue),
+            uuid: getString(statement: stmt, index: HabitCol.uuid.rawValue)
+                ?? ""
         )
     }
 
@@ -346,10 +420,10 @@ class DatabaseManager: ObservableObject {
         let cutoff = day - (lastNDays - 1) * 86400
 
         let sql = """
-            SELECT habit, timestamp, value
-            FROM Repetitions
-            WHERE timestamp >= ?
-        """
+                SELECT habit, timestamp, value
+                FROM Repetitions
+                WHERE timestamp >= ?
+            """
 
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -357,10 +431,11 @@ class DatabaseManager: ObservableObject {
 
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let habit = Int(sqlite3_column_int(stmt, 0))
-                let tsDay = Int(sqlite3_column_int64(stmt, 1)) / 86400 * 86400 / 1000
+                let tsDay =
+                    Int(sqlite3_column_int64(stmt, 1)) / 86400 * 86400 / 1000
                 let value = Int(sqlite3_column_int(stmt, 2))
 
-                let offset = (day - tsDay) / 86400   // 0..lastNDays-1
+                let offset = (day - tsDay) / 86400  // 0..lastNDays-1
                 guard offset >= 0 && offset < lastNDays else { continue }
 
                 var map = recentCompletions[habit] ?? [:]
@@ -384,7 +459,9 @@ class DatabaseManager: ObservableObject {
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            print("loadHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
+            print(
+                "loadHabit prepare failed:", String(cString: sqlite3_errmsg(db))
+            )
             return nil
         }
         defer { sqlite3_finalize(stmt) }
@@ -402,7 +479,7 @@ class DatabaseManager: ObservableObject {
     func loadTodayRepetitions() {
         todayRepetitions.removeAll()
 
-        let today = Int(Date().timeIntervalSince1970 / 86400) * 86400 // Start of day timestamp
+        let today = Int(Date().timeIntervalSince1970 / 86400) * 86400  // Start of day timestamp
 
         let querySQL = """
             SELECT id, habit, timestamp, value, notes
@@ -432,12 +509,13 @@ class DatabaseManager: ObservableObject {
         let now = Int(Date().timeIntervalSince1970)
         let todayStart = (now / 86400) * 86400
         let targetDay = (todayStart - (dayOffset * 86400)) * 1000
-        
+
         // Already done?
-        let query = "SELECT id FROM Repetitions WHERE habit = ? AND timestamp = ?"
+        let query =
+            "SELECT id FROM Repetitions WHERE habit = ? AND timestamp = ?"
         var stmt: OpaquePointer?
         var existingId: Int?
-        
+
         if sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_int(stmt, 1, Int32(habit.id))
             sqlite3_bind_int64(stmt, 2, Int64(targetDay))
@@ -446,7 +524,7 @@ class DatabaseManager: ObservableObject {
             }
         }
         sqlite3_finalize(stmt)
-        
+
         if let repId = existingId {
             // remove repetition
             let deleteSQL = "DELETE FROM Repetitions WHERE id = ?"
@@ -459,22 +537,24 @@ class DatabaseManager: ObservableObject {
             // insert repetition
             addRepetition(habitId: habit.id, timestamp: targetDay, value: 1)
         }
-        
+
         loadTodayRepetitions()
         loadRecentCompletions(lastNDays: 5)
     }
 
-
     // MARK: - Inserts/Deletes
 
-    func addHabit(name: String, question: String, notes: String?, reminder: Date?) {
+    func addHabit(
+        name: String, question: String, notes: String?, reminder: Date?
+    ) {
         // Compute next position (NULL sorts oddly; prefer explicit)
         let nextPosition = nextHabitPosition()
 
         let hasReminder = (reminder != nil)
         let (hour, minute): (Int32?, Int32?) = {
             guard let date = reminder else { return (nil, nil) }
-            let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
+            let comps = Calendar.current.dateComponents(
+                [.hour, .minute], from: date)
             return (Int32(comps.hour ?? 0), Int32(comps.minute ?? 0))
         }()
 
@@ -488,23 +568,27 @@ class DatabaseManager: ObservableObject {
 
         var stmt: OpaquePointer?
         // Ensure SQLite copies Swift strings
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        let SQLITE_TRANSIENT = unsafeBitCast(
+            -1, to: sqlite3_destructor_type.self)
 
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            print("addHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
+            print(
+                "addHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
             return
         }
         defer { sqlite3_finalize(stmt) }
 
         // Bind 1: description (notes)
         if let notes = notes, !notes.isEmpty {
-            sqlite3_bind_text(stmt, 1, (notes as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(
+                stmt, 1, (notes as NSString).utf8String, -1, SQLITE_TRANSIENT)
         } else {
             sqlite3_bind_null(stmt, 1)
         }
 
         // Bind 2: name
-        sqlite3_bind_text(stmt, 2, (name as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(
+            stmt, 2, (name as NSString).utf8String, -1, SQLITE_TRANSIENT)
 
         // Bind 3: position
         sqlite3_bind_int64(stmt, 3, sqlite3_int64(nextPosition))
@@ -513,21 +597,33 @@ class DatabaseManager: ObservableObject {
         sqlite3_bind_int(stmt, 4, hasReminder ? 127 : 0)
 
         // 5 reminder_hour
-        if let hour { sqlite3_bind_int(stmt, 5, hour) } else { sqlite3_bind_null(stmt, 5) }
+        if let hour {
+            sqlite3_bind_int(stmt, 5, hour)
+        } else {
+            sqlite3_bind_null(stmt, 5)
+        }
 
         // 6 reminder_min
-        if let minute { sqlite3_bind_int(stmt, 6, minute) } else { sqlite3_bind_null(stmt, 6) }
+        if let minute {
+            sqlite3_bind_int(stmt, 6, minute)
+        } else {
+            sqlite3_bind_null(stmt, 6)
+        }
 
         // 7 question
-        sqlite3_bind_text(stmt, 7, (question as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(
+            stmt, 7, (question as NSString).utf8String, -1, SQLITE_TRANSIENT)
 
         // 8 uuid
         let uuid = UUID().uuidString
-        sqlite3_bind_text(stmt, 8, (uuid as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(
+            stmt, 8, (uuid as NSString).utf8String, -1, SQLITE_TRANSIENT)
 
         let rc = sqlite3_step(stmt)
         if rc != SQLITE_DONE {
-            print("addHabit insert failed (rc=\(rc)):", String(cString: sqlite3_errmsg(db)))
+            print(
+                "addHabit insert failed (rc=\(rc)):",
+                String(cString: sqlite3_errmsg(db)))
             return
         }
 
@@ -537,39 +633,41 @@ class DatabaseManager: ObservableObject {
     }
 
     func deleteHabit(_ habit: Habit) {
-            let begin = "BEGIN IMMEDIATE TRANSACTION;"
-            let delReps = "DELETE FROM Repetitions WHERE habit = ?;"
-            let delHabit = "DELETE FROM Habits WHERE Id = ?;"
-            let commit = "COMMIT;"
+        let begin = "BEGIN IMMEDIATE TRANSACTION;"
+        let delReps = "DELETE FROM Repetitions WHERE habit = ?;"
+        let delHabit = "DELETE FROM Habits WHERE Id = ?;"
+        let commit = "COMMIT;"
 
-            var stmt: OpaquePointer?
+        var stmt: OpaquePointer?
 
-            sqlite3_exec(db, begin, nil, nil, nil)
+        sqlite3_exec(db, begin, nil, nil, nil)
 
-            // Delete repetitions
-            if sqlite3_prepare_v2(db, delReps, -1, &stmt, nil) == SQLITE_OK {
-                sqlite3_bind_int(stmt, 1, Int32(habit.id))
-                if sqlite3_step(stmt) != SQLITE_DONE {
-                    print("delete reps failed:", String(cString: sqlite3_errmsg(db)))
-                }
+        // Delete repetitions
+        if sqlite3_prepare_v2(db, delReps, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int(stmt, 1, Int32(habit.id))
+            if sqlite3_step(stmt) != SQLITE_DONE {
+                print(
+                    "delete reps failed:", String(cString: sqlite3_errmsg(db)))
             }
-            sqlite3_finalize(stmt)
-
-            // Delete habit
-            if sqlite3_prepare_v2(db, delHabit, -1, &stmt, nil) == SQLITE_OK {
-                sqlite3_bind_int(stmt, 1, Int32(habit.id))
-                if sqlite3_step(stmt) != SQLITE_DONE {
-                    print("delete habit failed:", String(cString: sqlite3_errmsg(db)))
-                }
-            }
-            sqlite3_finalize(stmt)
-
-            sqlite3_exec(db, commit, nil, nil, nil)
-
-            // Refresh UI caches
-            loadHabits()
-            loadTodayRepetitions()
         }
+        sqlite3_finalize(stmt)
+
+        // Delete habit
+        if sqlite3_prepare_v2(db, delHabit, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int(stmt, 1, Int32(habit.id))
+            if sqlite3_step(stmt) != SQLITE_DONE {
+                print(
+                    "delete habit failed:", String(cString: sqlite3_errmsg(db)))
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        sqlite3_exec(db, commit, nil, nil, nil)
+
+        // Refresh UI caches
+        loadHabits()
+        loadTodayRepetitions()
+    }
 
     private func nextHabitPosition() -> Int {
         var stmt: OpaquePointer?
@@ -580,36 +678,47 @@ class DatabaseManager: ObservableObject {
                 pos = Int(sqlite3_column_int64(stmt, 0))
             }
         } else {
-            print("nextHabitPosition prepare failed:", String(cString: sqlite3_errmsg(db)))
+            print(
+                "nextHabitPosition prepare failed:",
+                String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(stmt)
         return pos
     }
 
-    private func addRepetition(habitId: Int, timestamp: Int, value: Int, notes: String? = nil) {
+    private func addRepetition(
+        habitId: Int, timestamp: Int, value: Int, notes: String? = nil
+    ) {
         let insertSQL = """
             INSERT OR REPLACE INTO Repetitions (habit, timestamp, value, notes) 
             VALUES (?, ?, ?, ?)
             """
 
         var statement: OpaquePointer?
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        let SQLITE_TRANSIENT = unsafeBitCast(
+            -1, to: sqlite3_destructor_type.self)
 
         if sqlite3_prepare_v2(db, insertSQL, -1, &statement, nil) == SQLITE_OK {
             sqlite3_bind_int(statement, 1, Int32(habitId))
             sqlite3_bind_int64(statement, 2, Int64(timestamp))
             sqlite3_bind_int(statement, 3, Int32(value))
             if let notes = notes, !notes.isEmpty {
-                sqlite3_bind_text(statement, 4, (notes as NSString).utf8String, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(
+                    statement, 4, (notes as NSString).utf8String, -1,
+                    SQLITE_TRANSIENT)
             } else {
                 sqlite3_bind_null(statement, 4)
             }
             let rc = sqlite3_step(statement)
             if rc != SQLITE_DONE {
-                print("addRepetition failed (rc=\(rc)):", String(cString: sqlite3_errmsg(db)))
+                print(
+                    "addRepetition failed (rc=\(rc)):",
+                    String(cString: sqlite3_errmsg(db)))
             }
         } else {
-            print("addRepetition prepare failed:", String(cString: sqlite3_errmsg(db)))
+            print(
+                "addRepetition prepare failed:",
+                String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(statement)
     }
@@ -624,10 +733,14 @@ class DatabaseManager: ObservableObject {
             sqlite3_bind_int(statement, 1, Int32(id))
             let rc = sqlite3_step(statement)
             if rc != SQLITE_DONE {
-                print("deleteRepetition failed (rc=\(rc)):", String(cString: sqlite3_errmsg(db)))
+                print(
+                    "deleteRepetition failed (rc=\(rc)):",
+                    String(cString: sqlite3_errmsg(db)))
             }
         } else {
-            print("deleteRepetition prepare failed:", String(cString: sqlite3_errmsg(db)))
+            print(
+                "deleteRepetition prepare failed:",
+                String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(statement)
     }
@@ -635,7 +748,9 @@ class DatabaseManager: ObservableObject {
     // MARK: - Column helpers
 
     private func getString(statement: OpaquePointer?, index: Int32) -> String? {
-        guard let cString = sqlite3_column_text(statement, index) else { return nil }
+        guard let cString = sqlite3_column_text(statement, index) else {
+            return nil
+        }
         return String(cString: cString)
     }
 
@@ -643,4 +758,258 @@ class DatabaseManager: ObservableObject {
         if sqlite3_column_type(statement, index) == SQLITE_NULL { return nil }
         return Int(sqlite3_column_int(statement, index))
     }
+
+    // MARK: - Scores (Loop Habit Tracker style)
+
+    func scoresForHabit(_ habit: Habit, days: Int) -> [Score] {
+        let to = Timestamp(date: Date())
+        let from = to.minus(days - 1)
+
+        // Build daily entries array (oldest → newest)
+        let entries = entriesForHabit(habit, from: from, to: to)
+        print(entries)
+
+        // Compute scores using Loop’s algorithm
+        let scoreList = ScoreList()
+        scoreList.recompute(
+            frequency: Frequency(
+                numerator: habit.freqNum, denominator: habit.freqDen),
+            isNumerical: habit.type != 0,  // adapt if you model habit.type differently
+            numericalHabitType: habit.targetType == 1 ? .atMost : .atLeast,
+            targetValue: habit.targetValue,
+            computedEntries: entries,
+            from: from
+        )
+
+        // Return chronological order for charts
+        return scoreList.getByInterval(from: from, to: to)
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Build one entry per day between [from, to], based on Repetitions in DB
+    private func entriesForHabit(_ habit: Habit, from: Timestamp, to: Timestamp)
+        -> [Int]
+    {
+        var result: [Int] = []
+        var current = from
+
+        while !current.isNewerThan(to) {
+            // Find repetition for this day
+            let dayStart = current.day * 86_400
+            let rep = repetitionForHabit(habit.id, dayStart: dayStart)
+
+            if let rep = rep {
+                if habit.type == 0 {
+                    if rep.value > 0 {
+                        // Boolean habit: 1 = done
+                        result.append(Entry.yesManual)
+                    } else {
+                        result.append(0)
+                    }
+                } else {
+                    // Numerical habit: use stored value
+                    result.append(rep.value)
+                }
+            } else {
+                // No repetition logged
+                result.append(0)
+            }
+            current = current.plus(1)
+        }
+
+        return result
+    }
+
+    /// Helper: fetch repetition for a habit on a given day (start-of-day timestamp)
+    private func repetitionForHabit(_ habitId: Int, dayStart: Int)
+        -> Repetition?
+    {
+        print("reps for \(habitId) on day \(dayStart * 1000)")
+        let querySQL = """
+            SELECT id, habit, timestamp, value, notes
+            FROM Repetitions
+            WHERE habit = ? AND timestamp = ?
+            LIMIT 1
+            """
+
+        var statement: OpaquePointer?
+        var repetition: Repetition?
+
+        if sqlite3_prepare_v2(db, querySQL, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_bind_int(statement, 1, Int32(habitId))
+            sqlite3_bind_int64(statement, 2, Int64(dayStart * 1000))
+            if sqlite3_step(statement) == SQLITE_ROW {
+                repetition = Repetition(
+                    id: Int(sqlite3_column_int(statement, 0)),
+                    habit: Int(sqlite3_column_int(statement, 1)),
+                    timestamp: Int(sqlite3_column_int64(statement, 2)),
+                    value: Int(sqlite3_column_int(statement, 3)),
+                    notes: getString(statement: statement, index: 4)
+                )
+            }
+        }
+        sqlite3_finalize(statement)
+
+        return repetition
+    }
+
+    // MARK: - Day bucketing
+    private lazy var timestampsAreMillis: Bool = {
+        var stmt: OpaquePointer?
+        var isMillis = false
+        if sqlite3_prepare_v2(
+            db, "SELECT MAX(timestamp) FROM Repetitions;", -1, &stmt, nil)
+            == SQLITE_OK
+        {
+            if sqlite3_step(stmt) == SQLITE_ROW,
+                sqlite3_column_type(stmt, 0) != SQLITE_NULL
+            {
+                let maxTs = sqlite3_column_int64(stmt, 0)
+                isMillis = maxTs > 2_000_000_000  // > ~2033s epoch; if ms it's ~1e12
+            }
+        }
+        sqlite3_finalize(stmt)
+        return isMillis
+    }()
+
+    @inline(__always)
+    private func dayStartSeconds(from epoch: Int) -> Int {
+        let secs = epoch > 2_000_000_000 ? epoch / 1000 : epoch
+        return (secs / 86_400) * 86_400
+    }
+
+    // All done-days (boolean) or day->sum (numeric) between dates
+    func dayMapForHabit(_ habit: Habit, from: Date, to: Date) -> [Int: Int] {
+        var map: [Int: Int] = [:]
+
+        let cal = Calendar.current
+        let fromStart = cal.startOfDay(for: from)
+        // make 'to' inclusive at end of day (23:59:59)
+        let toEndExclusive = cal.date(
+            byAdding: .day, value: 1, to: cal.startOfDay(for: to))!
+        let fromS = Int(fromStart.timeIntervalSince1970)
+        let toSInclusive = Int(toEndExclusive.timeIntervalSince1970) - 1
+
+        let scale = timestampsAreMillis ? 1000 : 1
+        let sql = """
+                SELECT timestamp, value
+                FROM Repetitions
+                WHERE habit = ? AND timestamp BETWEEN ? AND ?
+            """
+
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int(stmt, 1, Int32(habit.id))
+            sqlite3_bind_int64(stmt, 2, Int64(fromS * scale))
+            sqlite3_bind_int64(stmt, 3, Int64(toSInclusive * scale))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let tsRaw = Int(sqlite3_column_int64(stmt, 0))
+                let vRaw = Int(sqlite3_column_int(stmt, 1))
+                let day = dayStartSeconds(from: tsRaw)
+                if habit.type == 0 {
+                    if vRaw > 0 { map[day] = 1 }  // boolean: mark done
+                } else {
+                    map[day, default: 0] += vRaw  // numeric: sum
+                }
+            }
+        } else {
+            print(
+                "dayMapForHabit prepare failed:",
+                String(cString: sqlite3_errmsg(db)))
+        }
+        sqlite3_finalize(stmt)
+        return map
+    }
+
+    // Count of done days per month (boolean) or days meeting target (numeric)
+    struct MonthBucket: Identifiable {
+        let id = UUID()
+        let monthStart: Date
+        let count: Int
+    }
+
+    func monthBuckets(for habit: Habit, monthsBack: Int) -> [MonthBucket] {
+        let cal = Calendar.current
+        let thisMonthStart = cal.date(
+            from: cal.dateComponents([.year, .month], from: Date()))!
+        var buckets: [MonthBucket] = []
+
+        for i in stride(from: monthsBack - 1, through: 0, by: -1) {
+            guard
+                let monthStart = cal.date(
+                    byAdding: .month, value: -i, to: thisMonthStart),
+                let interval = cal.dateInterval(of: .month, for: monthStart)
+            else { continue }
+
+            // Build map for this exact month (inclusive)
+            let dayMap = dayMapForHabit(
+                habit, from: interval.start,
+                to: interval.end.addingTimeInterval(-1))
+
+            // Count days that are “done” in the month
+            let daysInMonth = cal.range(of: .day, in: .month, for: monthStart)!
+                .count
+            var count = 0
+            // use NOON anchor (DST-safe)
+            let anchor = cal.date(
+                bySettingHour: 12, minute: 0, second: 0, of: interval.start)!
+            for d in 0..<daysInMonth {
+                let date = cal.date(byAdding: .day, value: d, to: anchor)!
+                let key = (Int(date.timeIntervalSince1970) / 86_400) * 86_400
+                if habit.type == 0 {
+                    if dayMap[key] == 1 { count += 1 }
+                } else {
+                    // or compare against targetValue if you want “met target”
+                    if (dayMap[key] ?? 0) > 0 { count += 1 }
+                }
+            }
+
+            buckets.append(MonthBucket(monthStart: monthStart, count: count))
+        }
+
+        return buckets
+    }
+
+    // Toggle a specific calendar day (used by the calendar grid)
+    func toggleHabit(_ habit: Habit, on date: Date) {
+        let dayStart = (Int(date.timeIntervalSince1970) / 86_400) * 86_400
+
+        // check existing
+        var stmt: OpaquePointer?
+        var existingId: Int?
+        if sqlite3_prepare_v2(
+            db, "SELECT id FROM Repetitions WHERE habit = ? AND timestamp = ?",
+            -1, &stmt, nil) == SQLITE_OK
+        {
+            sqlite3_bind_int(stmt, 1, Int32(habit.id))
+            sqlite3_bind_int64(stmt, 2, Int64(dayStart * 1000))
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                existingId = Int(sqlite3_column_int(stmt, 0))
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        if let id = existingId {
+            if sqlite3_prepare_v2(
+                db, "DELETE FROM Repetitions WHERE id = ?", -1, &stmt, nil)
+                == SQLITE_OK
+            {
+                sqlite3_bind_int(stmt, 1, Int32(id))
+                _ = sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt)
+        } else {
+            let sql =
+                "INSERT INTO Repetitions (habit, timestamp, value, notes) VALUES (?, ?, 1, NULL)"
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_int(stmt, 1, Int32(habit.id))
+                sqlite3_bind_int64(stmt, 2, Int64(dayStart * 1000))
+                _ = sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt)
+        }
+
+        loadTodayRepetitions()
+    }
+
 }

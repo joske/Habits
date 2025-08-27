@@ -41,7 +41,7 @@ struct HabitRowView: View {
             HabitHistoryStrip(
                 color: Color.green,
                 completions: completions,
-                onToggleDay: onToggleDay,
+                onToggleDay: onToggleDay
             )
 
         }
