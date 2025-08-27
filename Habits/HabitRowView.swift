@@ -9,8 +9,8 @@ import SwiftUI
 
 struct HabitRowView: View {
     let habit: Habit
-    let isCompleted: Bool
-    let onToggle: () -> Void
+    let completions: [Int: Int]
+    let onToggleDay: (Int) -> Void   // offset tapped
 
     var body: some View {
         HStack {
@@ -35,6 +35,14 @@ struct HabitRowView: View {
                     .foregroundColor(.blue)
                 }
             }
+
+            Spacer(minLength: 8)
+
+            HabitHistoryStrip(
+                color: Color.green,
+                completions: completions,
+                onToggleDay: onToggleDay,
+            )
 
         }
         .padding(.vertical, 8)

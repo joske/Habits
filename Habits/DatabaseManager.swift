@@ -30,6 +30,9 @@ class DatabaseManager: ObservableObject {
 
     @Published var habits: [Habit] = []
     @Published var todayRepetitions: [Int: Repetition] = [:] // habit_id -> repetition
+    // Map: habitId -> (dayOffset -> value)
+    // dayOffset: 0 = today, 1 = yesterday, ...
+    @Published var recentCompletions: [Int: [Int: Int]] = [:]
 
     init() {
         let fileURL = try! FileManager.default
@@ -336,6 +339,39 @@ class DatabaseManager: ObservableObject {
         )
     }
 
+    func loadRecentCompletions(lastNDays: Int = 5) {
+        recentCompletions.removeAll()
+
+        let day = Int(Date().timeIntervalSince1970) / 86400 * 86400
+        let cutoff = day - (lastNDays - 1) * 86400
+
+        let sql = """
+            SELECT habit, timestamp, value
+            FROM Repetitions
+            WHERE timestamp >= ?
+        """
+
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int64(stmt, 1, Int64(cutoff * 1000))
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let habit = Int(sqlite3_column_int(stmt, 0))
+                let tsDay = Int(sqlite3_column_int64(stmt, 1)) / 86400 * 86400 / 1000
+                let value = Int(sqlite3_column_int(stmt, 2))
+
+                let offset = (day - tsDay) / 86400   // 0..lastNDays-1
+                guard offset >= 0 && offset < lastNDays else { continue }
+
+                var map = recentCompletions[habit] ?? [:]
+                // If the same day has multiple repetitions, sum them (or set 1 if binary)
+                map[offset] = (map[offset] ?? 0) + value
+                recentCompletions[habit] = map
+            }
+        }
+        sqlite3_finalize(stmt)
+    }
+
     func loadHabit(id rowId: Int64) -> Habit? {
         let sql = """
             SELECT Id, archived, color, description, freq_den, freq_num, highlight, name,
@@ -392,18 +428,42 @@ class DatabaseManager: ObservableObject {
         sqlite3_finalize(statement)
     }
 
-    func toggleHabit(_ habit: Habit) {
+    func toggleHabit(_ habit: Habit, dayOffset: Int = 0) {
         let now = Int(Date().timeIntervalSince1970)
-        let dayTimestamp = (now / 86400) * 86400
-
-        if let existingRep = todayRepetitions[habit.id] {
-            deleteRepetition(existingRep)
-        } else {
-            addRepetition(habitId: habit.id, timestamp: dayTimestamp, value: 1)
+        let todayStart = (now / 86400) * 86400
+        let targetDay = (todayStart - (dayOffset * 86400)) * 1000
+        
+        // Already done?
+        let query = "SELECT id FROM Repetitions WHERE habit = ? AND timestamp = ?"
+        var stmt: OpaquePointer?
+        var existingId: Int?
+        
+        if sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int(stmt, 1, Int32(habit.id))
+            sqlite3_bind_int64(stmt, 2, Int64(targetDay))
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                existingId = Int(sqlite3_column_int(stmt, 0))
+            }
         }
-
+        sqlite3_finalize(stmt)
+        
+        if let repId = existingId {
+            // remove repetition
+            let deleteSQL = "DELETE FROM Repetitions WHERE id = ?"
+            if sqlite3_prepare_v2(db, deleteSQL, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_int(stmt, 1, Int32(repId))
+                sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt)
+        } else {
+            // insert repetition
+            addRepetition(habitId: habit.id, timestamp: targetDay, value: 1)
+        }
+        
         loadTodayRepetitions()
+        loadRecentCompletions(lastNDays: 5)
     }
+
 
     // MARK: - Inserts/Deletes
 

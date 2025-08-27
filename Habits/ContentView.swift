@@ -23,54 +23,14 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             List {
+                HistoryHeader()
                 ForEach(databaseManager.habits) { habit in
-                    HabitRowView(
-                        habit: habit,
-                        isCompleted: databaseManager.todayRepetitions[habit.id] != nil,
-                        onToggle: {
-                            databaseManager.toggleHabit(habit)
-                        }
-                    )
-                    .contentShape(Rectangle()) // ensure whole row is long-pressable
-                    .contextMenu { // shows on long press
-                        Button(role: .destructive) {
-                            habitPendingDelete = habit
-                            showDeleteConfirm = true
-                        } label: {
-                            Label("Delete Habit", systemImage: "trash")
-                        }
-                    }
+                    habitRow(for: habit)
                 }
             }
             .navigationTitle("Habits")
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        showingAddHabit = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .accessibilityLabel("Add Habit")
-                    }
-
-                    Button {
-                        showingImporter = true
-                    } label: {
-                        Image(systemName: "square.and.arrow.down.on.square")
-                            .accessibilityLabel("Import Database")
-                    }
-                    Button {
-                        do {
-                            let data = try databaseManager.exportDatabaseData()
-                            exportDoc = SQLiteDocument(data: data)
-                            showingExporter = true
-                        } catch {
-                            exportError = error.localizedDescription
-                        }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .accessibilityLabel("Export Database")
-                }
+                toolbarItems
             }
             .confirmationDialog(
                 "Delete this habit?",
@@ -85,56 +45,160 @@ struct ContentView: View {
                 }
                 Button("Cancel", role: .cancel) { habitPendingDelete = nil }
             } message: {
-                Text("This will remove the habit and today’s repetitions.")
+                Text("This will remove the habit and today's repetitions.")
             }
             .sheet(isPresented: $showingAddHabit) {
-                AddHabitView { name, question, notes, reminder in
-                    databaseManager.addHabit(name: name, question: question, notes: notes.isEmpty ? nil : notes, reminder: reminder)
-                    notificationManager.scheduleNotifications(for: databaseManager.habits)
-                    databaseManager.loadHabits()
-                }
+                addHabitSheet
             }
             .fileExporter(
-                 isPresented: $showingExporter,
-                 document: exportDoc,
-                 contentType: UTType(filenameExtension: "db") ?? .data,
-                 defaultFilename: defaultExportFilename()
-             ) { result in
-                 if case .failure(let err) = result { exportError = err.localizedDescription }
-             }
-             .alert("Export Failed", isPresented: Binding(get: { exportError != nil }, set: { _ in exportError = nil })) {
-                 Button("OK", role: .cancel) {}
-             } message: {
-                 Text(exportError ?? "")
-             }
+                isPresented: $showingExporter,
+                document: exportDoc,
+                contentType: UTType(filenameExtension: "db") ?? .data,
+                defaultFilename: defaultExportFilename()
+            ) { result in
+                if case .failure(let err) = result {
+                    exportError = err.localizedDescription
+                }
+            }
+            .alert(
+                "Export Failed",
+                isPresented: Binding(
+                    get: { exportError != nil },
+                    set: { _ in exportError = nil }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(exportError ?? "")
+            }
             .fileImporter(
                 isPresented: $showingImporter,
                 allowedContentTypes: [
                     UTType(filenameExtension: "sqlite")!,
                     UTType(filenameExtension: "db")!,
-                    UTType(filenameExtension: "sqlite3")!
+                    UTType(filenameExtension: "sqlite3")!,
                 ],
                 allowsMultipleSelection: false
             ) { result in
-                do {
-                    guard let url = try result.get().first else { return }
-                    try databaseManager.importExternalDatabase(from: url)
-                    databaseManager.loadHabits()
-                    databaseManager.loadTodayRepetitions()
-                } catch {
-                    importError = error.localizedDescription
-                }
+                handleFileImport(result)
             }
         }
         .onAppear {
-            notificationManager.requestPermission()
-            databaseManager.loadHabits()
-            databaseManager.loadTodayRepetitions()
+            setupOnAppear()
         }
         .refreshable {
-            databaseManager.loadHabits()
-            databaseManager.loadTodayRepetitions()
+            refreshData()
         }
+    }
+
+    // MARK: - Helper Views
+    @ViewBuilder
+    private func habitRow(for habit: Habit) -> some View {
+        let completions: [Int: Int] = databaseManager.recentCompletions[habit.id] ?? [:]
+
+        NavigationLink(
+            destination: HabitDetailView(habitId: habit.id)
+                .environmentObject(databaseManager)
+        ) {
+            HabitRowView(
+                habit: habit,
+                completions: completions,
+                onToggleDay: { offset in
+                    databaseManager.toggleHabit(habit, dayOffset: offset)
+                }
+            )
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            contextMenuItems(for: habit)
+        }
+    }
+
+    @ViewBuilder
+    private func contextMenuItems(for habit: Habit) -> some View {
+        Button(role: .destructive) {
+            habitPendingDelete = habit
+            showDeleteConfirm = true
+        } label: {
+            Label("Delete Habit", systemImage: "trash")
+        }
+    }
+
+    private var toolbarItems: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            Button {
+                showingAddHabit = true
+            } label: {
+                Image(systemName: "plus")
+                    .accessibilityLabel("Add Habit")
+            }
+
+            Button {
+                showingImporter = true
+            } label: {
+                Image(systemName: "square.and.arrow.down.on.square")
+                    .accessibilityLabel("Import Database")
+            }
+
+            Button {
+                handleExport()
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Export Database")
+        }
+    }
+
+    private var addHabitSheet: some View {
+        AddHabitView { name, question, notes, reminder in
+            databaseManager.addHabit(
+                name: name,
+                question: question,
+                notes: notes.isEmpty ? nil : notes,
+                reminder: reminder
+            )
+            notificationManager.scheduleNotifications(
+                for: databaseManager.habits
+            )
+            databaseManager.loadHabits()
+        }
+    }
+
+    // MARK: - Helper Functions
+    private func handleExport() {
+        do {
+            let data = try databaseManager.exportDatabaseData()
+            exportDoc = SQLiteDocument(data: data)
+            showingExporter = true
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            try databaseManager.importExternalDatabase(from: url)
+            databaseManager.loadHabits()
+            databaseManager.loadRecentCompletions(lastNDays: 5)
+            databaseManager.loadTodayRepetitions()
+        } catch {
+            print(Thread.callStackSymbols.joined(separator: "\n"))
+            importError = error.localizedDescription
+        }
+    }
+
+    private func setupOnAppear() {
+        notificationManager.requestPermission()
+        databaseManager.loadHabits()
+        databaseManager.loadRecentCompletions(lastNDays: 5)
+        databaseManager.loadTodayRepetitions()
+    }
+
+    private func refreshData() {
+        databaseManager.loadHabits()
+        databaseManager.loadRecentCompletions(lastNDays: 5)
+        databaseManager.loadTodayRepetitions()
     }
 }
 
