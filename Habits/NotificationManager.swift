@@ -8,10 +8,19 @@
 import Foundation
 import UserNotifications
 
-class NotificationManager: ObservableObject {
+class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
 
-    private init() {}
+    private override init() {}
+
+    func configure() {
+        // Call this once at app launch (main thread)
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, err in
+            print("Notif auth:", granted, err?.localizedDescription ?? "ok")
+        }
+    }
 
     func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -19,6 +28,8 @@ class NotificationManager: ObservableObject {
                 print("Notification permission granted")
             } else if let error = error {
                 print("Notification permission error: \(error)")
+            } else {
+                print("Notification permission denied")
             }
         }
     }
@@ -58,5 +69,12 @@ class NotificationManager: ObservableObject {
                 }
             }
         }
+    }
+
+    // Foreground presentation (iOS 14+)
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound]) // show while app is open
     }
 }
