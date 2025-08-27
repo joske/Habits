@@ -16,6 +16,9 @@ struct ContentView: View {
     @State private var importError: String?
     @State private var habitPendingDelete: Habit?
     @State private var showDeleteConfirm = false
+    @State private var showingExporter = false
+    @State private var exportDoc: SQLiteDocument?
+    @State private var exportError: String?
 
     var body: some View {
         NavigationView {
@@ -55,6 +58,18 @@ struct ContentView: View {
                         Image(systemName: "square.and.arrow.down.on.square")
                             .accessibilityLabel("Import Database")
                     }
+                    Button {
+                        do {
+                            let data = try databaseManager.exportDatabaseData()
+                            exportDoc = SQLiteDocument(data: data)
+                            showingExporter = true
+                        } catch {
+                            exportError = error.localizedDescription
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Export Database")
                 }
             }
             .confirmationDialog(
@@ -79,6 +94,19 @@ struct ContentView: View {
                     databaseManager.loadHabits()
                 }
             }
+            .fileExporter(
+                 isPresented: $showingExporter,
+                 document: exportDoc,
+                 contentType: UTType(filenameExtension: "db") ?? .data,
+                 defaultFilename: defaultExportFilename()
+             ) { result in
+                 if case .failure(let err) = result { exportError = err.localizedDescription }
+             }
+             .alert("Export Failed", isPresented: Binding(get: { exportError != nil }, set: { _ in exportError = nil })) {
+                 Button("OK", role: .cancel) {}
+             } message: {
+                 Text(exportError ?? "")
+             }
             .fileImporter(
                 isPresented: $showingImporter,
                 allowedContentTypes: [
@@ -112,4 +140,10 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+}
+
+private func defaultExportFilename() -> String {
+    let df = DateFormatter()
+    df.dateFormat = "yyyy-MM-dd_HHmmss"
+    return "habits_\(df.string(from: Date())).db"
 }

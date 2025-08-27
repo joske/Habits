@@ -249,6 +249,40 @@ class DatabaseManager: ObservableObject {
         }
     }
 
+    /// Returns binary data of a consistent DB snapshot.
+    func exportDatabaseData() throws -> Data {
+        // 1) Create a temp file
+        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent("habits-export-\(UUID().uuidString).db")
+        // 2) Copy DB into temp using the SQLite backup API
+        try backupDatabase(to: tmpURL.path)
+        // 3) Read bytes
+        let data = try Data(contentsOf: tmpURL)
+        // 4) Clean up temp file (optional)
+        try? FileManager.default.removeItem(at: tmpURL)
+        return data
+    }
+
+    /// Uses sqlite3_backup to copy the live database to `destPath`.
+    private func backupDatabase(to destPath: String) throws {
+        var destDB: OpaquePointer?
+        guard sqlite3_open(destPath, &destDB) == SQLITE_OK else {
+            throw NSError(domain: "DBExport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open destination DB"])
+        }
+        defer { sqlite3_close(destDB) }
+
+        guard let backup = sqlite3_backup_init(destDB, "main", db, "main") else {
+            let msg = String(cString: sqlite3_errmsg(destDB))
+            throw NSError(domain: "DBExport", code: 2, userInfo: [NSLocalizedDescriptionKey: "backup_init failed: \(msg)"])
+        }
+        // Copy all pages (-1)
+        let stepRC = sqlite3_backup_step(backup, -1)
+        _ = sqlite3_backup_finish(backup)
+
+        guard stepRC == SQLITE_DONE else {
+            let msg = String(cString: sqlite3_errmsg(destDB))
+            throw NSError(domain: "DBExport", code: 3, userInfo: [NSLocalizedDescriptionKey: "backup_step failed: \(stepRC) \(msg)"])
+        }
+    }
     // MARK: - Queries
 
     func loadHabits() {
