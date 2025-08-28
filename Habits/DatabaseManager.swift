@@ -142,153 +142,71 @@ class DatabaseManager: ObservableObject {
 
     // MARK: - Import external DB
 
-    /// Validate -> backup -> replace -> reopen on the app's DB path.
-    func importExternalDatabase(from url: URL) throws {
-        // 1) Validate selected DB
-        try validateDatabase(at: url)
+    func importExternalDatabase(from pickedURL: URL) throws {
+        // 1) Start security-scoped access (for iCloud/Files provider URLs)
+        let needsSecurity = pickedURL.startAccessingSecurityScopedResource()
+        defer { if needsSecurity { pickedURL.stopAccessingSecurityScopedResource() } }
+        if !needsSecurity && !pickedURL.isFileURL {
+            throw NSError(domain: "DatabaseManager", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not access the selected file."])
+        }
 
-        // 2) Backup current DB (+wal/+shm)
-        try backupCurrentDatabase()
+        // 2) Coordinate the read to avoid permission errors
+        var coordError: NSError?
+        var readURL = pickedURL
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        coordinator.coordinate(readingItemAt: pickedURL, options: .withoutChanges, error: &coordError) { url in
+            readURL = url
+        }
+        if let e = coordError { throw e }
 
-        // 3) Replace main DB file (and sibling WAL/SHM if present)
-        try replaceAppDatabase(with: url)
+        // 3) Load file data
+        guard let data = try? Data(contentsOf: readURL, options: [.mappedIfSafe]) else {
+            throw NSError(domain: "DatabaseManager", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "The selected file could not be read."])
+        }
 
-        // 4) Reopen connection and reload
-        reopenDatabase()
+        // 4) Quick signature check: must start with "SQLite format 3\0"
+        if data.count < 16 || String(data: data.prefix(16), encoding: .ascii) != "SQLite format 3\0" {
+            throw NSError(domain: "DatabaseManager", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "File is not a valid SQLite database."])
+        }
+
+        // 5) Destination paths inside sandbox
+        let fm = FileManager.default
+        let docs = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let dest = docs.appendingPathComponent("habits.db")
+        let temp = docs.appendingPathComponent("habits-import-\(UUID().uuidString).db")
+
+        try data.write(to: temp, options: .atomic)
+
+        // 6) Close current db handle if open
+        if db != nil {
+            sqlite3_close(db)
+            db = nil
+        }
+
+        // 7) Backup old db, then replace with imported one
+        let backup = docs.appendingPathComponent("habits-backup-\(Int(Date().timeIntervalSince1970))).db")
+        if fm.fileExists(atPath: dest.path) {
+            try? fm.copyItem(at: dest, to: backup)
+        }
+        if fm.fileExists(atPath: dest.path) {
+            try fm.replaceItemAt(dest, withItemAt: temp)
+        } else {
+            try fm.moveItem(at: temp, to: dest)
+        }
+
+        // 8) Reopen and reload
+        openDatabase()
+        createTables()
+        loadHabits()
+        loadTodayRepetitions()
+        loadRecentCompletions(lastNDays: 5)
     }
 
     private var appDBURL: URL {
         URL(fileURLWithPath: dbPath)
-    }
-
-    private func validateDatabase(at url: URL) throws {
-        var tempDB: OpaquePointer?
-        guard
-            sqlite3_open_v2(url.path, &tempDB, SQLITE_OPEN_READONLY, nil)
-                == SQLITE_OK, tempDB != nil
-        else {
-            throw DBImportError.openFailed
-        }
-        defer { sqlite3_close(tempDB) }
-
-        // integrity_check
-        var stmt: OpaquePointer?
-        guard
-            sqlite3_prepare_v2(
-                tempDB, "PRAGMA integrity_check;", -1, &stmt, nil) == SQLITE_OK
-        else {
-            throw DBImportError.invalidDatabase(
-                "prepare integrity_check failed")
-        }
-        defer { sqlite3_finalize(stmt) }
-        guard sqlite3_step(stmt) == SQLITE_ROW else {
-            throw DBImportError.invalidDatabase("no result")
-        }
-        if let c = sqlite3_column_text(stmt, 0) {
-            let res = String(cString: c)
-            guard res.lowercased() == "ok" else {
-                throw DBImportError.invalidDatabase(res)
-            }
-        }
-
-        // Minimal schema check for Habits
-        try assertHasTable(
-            tempDB,
-            "Habits",
-            requiredColumns: [
-                "Id", "name", "description", "question",
-                "freq_den", "freq_num", "type", "target_type", "target_value",
-                "unit",
-            ]
-        )
-    }
-
-    private func assertHasTable(
-        _ db: OpaquePointer?, _ table: String, requiredColumns: [String]
-    ) throws {
-        var stmt: OpaquePointer?
-        let sql = "PRAGMA table_info(\(table));"
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw DBImportError.schemaMismatch(
-                "could not read table_info(\(table))")
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        var found = Set<String>()
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            if let cName = sqlite3_column_text(stmt, 1) {
-                found.insert(String(cString: cName))
-            }
-        }
-        let missing = Set(requiredColumns).subtracting(found)
-        if !missing.isEmpty {
-            throw DBImportError.schemaMismatch(
-                "missing columns: \(missing.sorted().joined(separator: ", "))")
-        }
-    }
-
-    private func backupCurrentDatabase() throws {
-        let fm = FileManager.default
-        let src = appDBURL
-        guard fm.fileExists(atPath: src.path) else { return }
-
-        let ts = ISO8601DateFormatter().string(from: Date())
-            .replacingOccurrences(of: ":", with: "-")
-        let backup = src.deletingLastPathComponent().appendingPathComponent(
-            "habits-backup-\(ts).db")
-        try? fm.removeItem(at: backup)
-        do { try fm.copyItem(at: src, to: backup) } catch {
-            throw DBImportError.copyFailed(error.localizedDescription)
-        }
-
-        let wal = src.deletingPathExtension().appendingPathExtension("db-wal")
-        let shm = src.deletingPathExtension().appendingPathExtension("db-shm")
-        if fm.fileExists(atPath: wal.path) {
-            let backupWAL = backup.deletingPathExtension()
-                .appendingPathExtension("db-wal")
-            try? fm.copyItem(at: wal, to: backupWAL)
-        }
-        if fm.fileExists(atPath: shm.path) {
-            let backupSHM = backup.deletingPathExtension()
-                .appendingPathExtension("db-shm")
-            try? fm.copyItem(at: shm, to: backupSHM)
-        }
-    }
-
-    private func replaceAppDatabase(with srcURL: URL) throws {
-        let fm = FileManager.default
-        let dst = appDBURL
-
-        // Close before touching files
-        closeDatabase()
-
-        // Remove existing target files
-        try? fm.removeItem(at: dst)
-        let wal = dst.deletingPathExtension().appendingPathExtension("db-wal")
-        let shm = dst.deletingPathExtension().appendingPathExtension("db-shm")
-        try? fm.removeItem(at: wal)
-        try? fm.removeItem(at: shm)
-
-        // Copy main DB
-        do { try fm.copyItem(at: srcURL, to: dst) } catch {
-            throw DBImportError.copyFailed(error.localizedDescription)
-        }
-
-        // Copy sibling -wal / -shm if present (source folder)
-        let base = srcURL.deletingPathExtension().lastPathComponent
-        let dir = srcURL.deletingLastPathComponent()
-        let srcWAL = dir.appendingPathComponent(base + "-wal")
-        let srcSHM = dir.appendingPathComponent(base + "-shm")
-        if fm.fileExists(atPath: srcWAL.path) {
-            let dstWAL = dst.deletingPathExtension().appendingPathExtension(
-                "db-wal")
-            _ = try? fm.copyItem(at: srcWAL, to: dstWAL)
-        }
-        if fm.fileExists(atPath: srcSHM.path) {
-            let dstSHM = dst.deletingPathExtension().appendingPathExtension(
-                "db-shm")
-            _ = try? fm.copyItem(at: srcSHM, to: dstSHM)
-        }
     }
 
     /// Returns binary data of a consistent DB snapshot.
@@ -1010,6 +928,7 @@ class DatabaseManager: ObservableObject {
         }
 
         loadTodayRepetitions()
+        loadRecentCompletions()
     }
 
 }
