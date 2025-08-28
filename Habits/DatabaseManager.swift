@@ -462,93 +462,42 @@ class DatabaseManager: ObservableObject {
 
     // MARK: - Inserts/Deletes
 
-    func addHabit(
-        name: String, question: String, notes: String?, reminder: Date?
-    ) {
-        // Compute next position (NULL sorts oddly; prefer explicit)
+    func addHabit(name: String,
+                  question: String,
+                  notes: String?,
+                  reminderDays: Int?,
+                  reminderHour: Int?,
+                  reminderMin: Int?) {
         let nextPosition = nextHabitPosition()
-
-        let hasReminder = (reminder != nil)
-        let (hour, minute): (Int32?, Int32?) = {
-            guard let date = reminder else { return (nil, nil) }
-            let comps = Calendar.current.dateComponents(
-                [.hour, .minute], from: date)
-            return (Int32(comps.hour ?? 0), Int32(comps.minute ?? 0))
-        }()
-
         let sql = """
             INSERT INTO Habits
-            (archived, color, description, freq_den, freq_num, highlight, name, position,
-             reminder_days, reminder_hour, reminder_min, type, target_type, target_value, unit, question, uuid)
-            VALUES
-            (0, 0, ?, 1, 1, 0, ?, ?, ?, ?, ?, 0, 0, 0.0, "", ?, ?);
-            """
-
+            (name, question, description, archived, reminder_days, reminder_hour, reminder_min, position)
+            VALUES (?, ?, ?, 0, ?, ?, ?, ?)
+        """
         var stmt: OpaquePointer?
-        // Ensure SQLite copies Swift strings
-        let SQLITE_TRANSIENT = unsafeBitCast(
-            -1, to: sqlite3_destructor_type.self)
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (name as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (question as NSString).utf8String, -1, nil)
+            if let notes = notes, !notes.isEmpty {
+                sqlite3_bind_text(stmt, 3, (notes as NSString).utf8String, -1, nil)
+            } else {
+                sqlite3_bind_null(stmt, 3)
+            }
+            if let d = reminderDays { sqlite3_bind_int(stmt, 4, Int32(d)) } else { sqlite3_bind_null(stmt, 4) }
+            if let h = reminderHour { sqlite3_bind_int(stmt, 5, Int32(h)) } else { sqlite3_bind_null(stmt, 5) }
+            if let m = reminderMin { sqlite3_bind_int(stmt, 6, Int32(m)) } else { sqlite3_bind_null(stmt, 6) }
+            sqlite3_bind_int64(stmt, 7, sqlite3_int64(nextPosition))
 
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            print(
-                "addHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
-            return
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        // Bind 1: description (notes)
-        if let notes = notes, !notes.isEmpty {
-            sqlite3_bind_text(
-                stmt, 1, (notes as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            _ = sqlite3_step(stmt)
         } else {
-            sqlite3_bind_null(stmt, 1)
+            print("addHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
         }
-
-        // Bind 2: name
-        sqlite3_bind_text(
-            stmt, 2, (name as NSString).utf8String, -1, SQLITE_TRANSIENT)
-
-        // Bind 3: position
-        sqlite3_bind_int64(stmt, 3, sqlite3_int64(nextPosition))
-
-        // 4 reminder_days (all days = 127) or 0 when disabled
-        sqlite3_bind_int(stmt, 4, hasReminder ? 127 : 0)
-
-        // 5 reminder_hour
-        if let hour {
-            sqlite3_bind_int(stmt, 5, hour)
-        } else {
-            sqlite3_bind_null(stmt, 5)
-        }
-
-        // 6 reminder_min
-        if let minute {
-            sqlite3_bind_int(stmt, 6, minute)
-        } else {
-            sqlite3_bind_null(stmt, 6)
-        }
-
-        // 7 question
-        sqlite3_bind_text(
-            stmt, 7, (question as NSString).utf8String, -1, SQLITE_TRANSIENT)
-
-        // 8 uuid
-        let uuid = UUID().uuidString
-        sqlite3_bind_text(
-            stmt, 8, (uuid as NSString).utf8String, -1, SQLITE_TRANSIENT)
-
-        let rc = sqlite3_step(stmt)
-        if rc != SQLITE_DONE {
-            print(
-                "addHabit insert failed (rc=\(rc)):",
-                String(cString: sqlite3_errmsg(db)))
-            return
-        }
-
-        // Refresh UI-facing caches
+        sqlite3_finalize(stmt)
         loadHabits()
         loadTodayRepetitions()
+        loadRecentCompletions()
     }
+
 
     func deleteHabit(_ habit: Habit) {
         let begin = "BEGIN IMMEDIATE TRANSACTION;"
@@ -661,6 +610,62 @@ class DatabaseManager: ObservableObject {
                 String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(statement)
+    }
+
+    func updateHabit(
+        habitId: Int,
+        name: String,
+        question: String,
+        notes: String?,
+        reminderDays: Int?,
+        reminderHour: Int?,
+        reminderMin: Int?
+    ) {
+        let sql = """
+            UPDATE Habits
+            SET name = ?, question = ?, description = ?,
+                reminder_days = ?, reminder_hour = ?, reminder_min = ?
+            WHERE Id = ?
+        """
+
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            // 1 name
+            sqlite3_bind_text(stmt, 1, (name as NSString).utf8String, -1, nil)
+            // 2 question
+            sqlite3_bind_text(stmt, 2, (question as NSString).utf8String, -1, nil)
+            // 3 description / notes
+            if let notes = notes, !notes.isEmpty {
+                sqlite3_bind_text(stmt, 3, (notes as NSString).utf8String, -1, nil)
+            } else {
+                sqlite3_bind_null(stmt, 3)
+            }
+            // 4 reminder_days
+            if let d = reminderDays {
+                sqlite3_bind_int(stmt, 4, Int32(d))
+            } else {
+                sqlite3_bind_null(stmt, 4)
+            }
+            // 5 reminder_hour
+            if let h = reminderHour {
+                sqlite3_bind_int(stmt, 5, Int32(h))
+            } else {
+                sqlite3_bind_null(stmt, 5)
+            }
+            // 6 reminder_min
+            if let m = reminderMin {
+                sqlite3_bind_int(stmt, 6, Int32(m))
+            } else {
+                sqlite3_bind_null(stmt, 6)
+            }
+            // 7 id
+            sqlite3_bind_int(stmt, 7, Int32(habitId))
+
+            _ = sqlite3_step(stmt)
+        } else {
+            print("updateHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
+        }
+        sqlite3_finalize(stmt)
     }
 
     // MARK: - Column helpers

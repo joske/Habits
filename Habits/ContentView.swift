@@ -150,19 +150,19 @@ struct ContentView: View {
     }
 
     private var addHabitSheet: some View {
-        AddHabitView { name, question, notes, reminder in
-            databaseManager.addHabit(
-                name: name,
-                question: question,
-                notes: notes.isEmpty ? nil : notes,
-                reminder: reminder
-            )
-            notificationManager.scheduleNotifications(
-                for: databaseManager.habits
-            )
-            databaseManager.loadHabits()
+            AddHabitView { name, question, notes, reminderDays, hour, minute in
+                databaseManager.addHabit(
+                    name: name,
+                    question: question,
+                    notes: notes.isEmpty ? nil : notes,
+                    reminderDays: reminderDays,
+                    reminderHour: hour,
+                    reminderMin: minute
+                )
+                databaseManager.loadHabits()
+                notificationManager.scheduleNotifications(for: databaseManager.habits)
+            }
         }
-    }
 
     // MARK: - Helper Functions
     private func handleExport() {
