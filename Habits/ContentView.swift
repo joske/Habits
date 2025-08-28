@@ -183,7 +183,6 @@ struct ContentView: View {
             databaseManager.loadRecentCompletions(lastNDays: 5)
             databaseManager.loadTodayRepetitions()
         } catch {
-            print(Thread.callStackSymbols.joined(separator: "\n"))
             importError = error.localizedDescription
         }
     }

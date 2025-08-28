@@ -685,7 +685,6 @@ class DatabaseManager: ObservableObject {
 
         // Build daily entries array (oldest → newest)
         let entries = entriesForHabit(habit, from: from, to: to)
-        print(entries)
 
         // Compute scores using Loop’s algorithm
         let scoreList = ScoreList()
@@ -742,7 +741,6 @@ class DatabaseManager: ObservableObject {
     private func repetitionForHabit(_ habitId: Int, dayStart: Int)
         -> Repetition?
     {
-        print("reps for \(habitId) on day \(dayStart * 1000)")
         let querySQL = """
             SELECT id, habit, timestamp, value, notes
             FROM Repetitions

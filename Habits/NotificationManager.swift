@@ -39,7 +39,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
 
         for habit in habits {
-            print(habit)
             guard habit.hasReminder,
                   let hour = habit.reminderHour,
                   let minute = habit.reminderMin else { continue }
@@ -63,8 +62,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                         content: content,
                         trigger: trigger
                     )
-
-                    print("adding notification")
                     UNUserNotificationCenter.current().add(request)
                 }
             }
