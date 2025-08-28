@@ -86,9 +86,6 @@ struct ContentView: View {
         .onAppear {
             setupOnAppear()
         }
-        .refreshable {
-            refreshData()
-        }
     }
 
     // MARK: - Helper Views

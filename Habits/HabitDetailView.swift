@@ -15,15 +15,16 @@ struct HabitDetailView: View {
     @State private var showingEdit = false
 
     var body: some View {
-        VStack {
-            let scores = databaseManager.scoresForHabit(habit, days: 30)
+        ScrollView {
+            Text("Score").font(.headline)
+            let scores = databaseManager.scoresForHabit(habit, days: 365)
             HabitStrengthChart(scores: scores)
 
-            if let fresh = databaseManager.habits.first(where: { $0.id == habit.id }) {
-                ScrollView {
-                    HabitHistorySection(habit: fresh)
-                        .environmentObject(databaseManager)
-                }
+            if let fresh = databaseManager.habits.first(where: {
+                $0.id == habit.id
+            }) {
+                HabitHistorySection(habit: fresh)
+                    .environmentObject(databaseManager)
             }
         }
         .navigationTitle(habit.name)
@@ -34,7 +35,8 @@ struct HabitDetailView: View {
             }
         }
         .sheet(isPresented: $showingEdit) {
-            EditHabitView(habit: habit) { name, question, notes, reminderDays, hour, minute in
+            EditHabitView(habit: habit) {
+                name, question, notes, reminderDays, hour, minute in
                 databaseManager.updateHabit(
                     habitId: habit.id,
                     name: name,
@@ -45,7 +47,8 @@ struct HabitDetailView: View {
                     reminderMin: minute
                 )
                 databaseManager.loadHabits()
-                NotificationManager.shared.scheduleNotifications(for: databaseManager.habits)
+                NotificationManager.shared.scheduleNotifications(
+                    for: databaseManager.habits)
             }
         }
     }

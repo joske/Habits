@@ -13,7 +13,7 @@ struct HabitHistorySection: View {
     let monthsBack: Int = 36
 
     var body: some View {
-
+        Text("History").font(.headline)
         // Chart
         MonthlyHistoryChart(
             buckets: database.monthBuckets(for: habit, monthsBack: monthsBack),
@@ -21,6 +21,7 @@ struct HabitHistorySection: View {
         )
         .padding(.horizontal)
 
+        Text("Calendar").font(.headline)
         // Calendars
         HabitCalendarPager(habit: habit)
             .environmentObject(database)

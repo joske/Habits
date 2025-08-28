@@ -699,7 +699,7 @@ class DatabaseManager: ObservableObject {
             isNumerical: habit.type != 0,  // adapt if you model habit.type differently
             numericalHabitType: habit.targetType == 1 ? .atMost : .atLeast,
             targetValue: habit.targetValue,
-            computedEntries: entries,
+            computedEntries: entries.reversed(),
             from: from
         )
 

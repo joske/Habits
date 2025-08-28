@@ -104,9 +104,10 @@ struct Score: Identifiable {
 
     // This matches Score.Companion.compute() from Kotlin
     static func compute(_ freq: Double, _ prev: Double, _ percent: Double) -> Double {
-        // Kotlin version applies exponential smoothing based on frequency
-        // A common approximation: new = prev * (1 - freq) + percent * freq
-        return prev * (1.0 - freq) + percent * freq
+        let multiplier = pow(0.5, sqrt(freq) / 13)
+        var score = prev * multiplier
+        score += percent * (1 - multiplier)
+        return score
     }
 }
 
