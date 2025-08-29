@@ -45,8 +45,7 @@ class DatabaseManager: ObservableObject {
         dbPath = fileURL.path
         openDatabase()
         createTables()
-        loadHabits()
-        loadTodayRepetitions()
+        reload()
     }
 
     deinit {
@@ -145,38 +144,63 @@ class DatabaseManager: ObservableObject {
     func importExternalDatabase(from pickedURL: URL) throws {
         // 1) Start security-scoped access (for iCloud/Files provider URLs)
         let needsSecurity = pickedURL.startAccessingSecurityScopedResource()
-        defer { if needsSecurity { pickedURL.stopAccessingSecurityScopedResource() } }
+        defer {
+            if needsSecurity { pickedURL.stopAccessingSecurityScopedResource() }
+        }
         if !needsSecurity && !pickedURL.isFileURL {
-            throw NSError(domain: "DatabaseManager", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Could not access the selected file."])
+            throw NSError(
+                domain: "DatabaseManager", code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Could not access the selected file."
+                ])
         }
 
         // 2) Coordinate the read to avoid permission errors
         var coordError: NSError?
         var readURL = pickedURL
         let coordinator = NSFileCoordinator(filePresenter: nil)
-        coordinator.coordinate(readingItemAt: pickedURL, options: .withoutChanges, error: &coordError) { url in
+        coordinator.coordinate(
+            readingItemAt: pickedURL, options: .withoutChanges,
+            error: &coordError
+        ) { url in
             readURL = url
         }
         if let e = coordError { throw e }
 
         // 3) Load file data
-        guard let data = try? Data(contentsOf: readURL, options: [.mappedIfSafe]) else {
-            throw NSError(domain: "DatabaseManager", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "The selected file could not be read."])
+        guard
+            let data = try? Data(contentsOf: readURL, options: [.mappedIfSafe])
+        else {
+            throw NSError(
+                domain: "DatabaseManager", code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "The selected file could not be read."
+                ])
         }
 
         // 4) Quick signature check: must start with "SQLite format 3\0"
-        if data.count < 16 || String(data: data.prefix(16), encoding: .ascii) != "SQLite format 3\0" {
-            throw NSError(domain: "DatabaseManager", code: 3,
-                          userInfo: [NSLocalizedDescriptionKey: "File is not a valid SQLite database."])
+        if data.count < 16
+            || String(data: data.prefix(16), encoding: .ascii)
+                != "SQLite format 3\0"
+        {
+            throw NSError(
+                domain: "DatabaseManager", code: 3,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "File is not a valid SQLite database."
+                ])
         }
 
         // 5) Destination paths inside sandbox
         let fm = FileManager.default
-        let docs = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let docs = try fm.url(
+            for: .documentDirectory, in: .userDomainMask, appropriateFor: nil,
+            create: true)
         let dest = docs.appendingPathComponent("habits.db")
-        let temp = docs.appendingPathComponent("habits-import-\(UUID().uuidString).db")
+        let temp = docs.appendingPathComponent(
+            "habits-import-\(UUID().uuidString).db")
 
         try data.write(to: temp, options: .atomic)
 
@@ -187,7 +211,8 @@ class DatabaseManager: ObservableObject {
         }
 
         // 7) Backup old db, then replace with imported one
-        let backup = docs.appendingPathComponent("habits-backup-\(Int(Date().timeIntervalSince1970))).db")
+        let backup = docs.appendingPathComponent(
+            "habits-backup-\(Int(Date().timeIntervalSince1970))).db")
         if fm.fileExists(atPath: dest.path) {
             try? fm.copyItem(at: dest, to: backup)
         }
@@ -200,9 +225,7 @@ class DatabaseManager: ObservableObject {
         // 8) Reopen and reload
         openDatabase()
         createTables()
-        loadHabits()
-        loadTodayRepetitions()
-        loadRecentCompletions(lastNDays: 5)
+        reload()
     }
 
     private var appDBURL: URL {
@@ -462,42 +485,63 @@ class DatabaseManager: ObservableObject {
 
     // MARK: - Inserts/Deletes
 
-    func addHabit(name: String,
-                  question: String,
-                  notes: String?,
-                  reminderDays: Int?,
-                  reminderHour: Int?,
-                  reminderMin: Int?) {
+    func addHabit(
+        name: String,
+        question: String,
+        notes: String?,
+        reminderDays: Int?,
+        reminderHour: Int?,
+        reminderMin: Int?
+    ) {
         let nextPosition = nextHabitPosition()
         let sql = """
-            INSERT INTO Habits
-            (name, question, description, archived, reminder_days, reminder_hour, reminder_min, position)
-            VALUES (?, ?, ?, 0, ?, ?, ?, ?)
-        """
+                INSERT INTO Habits
+                (name, question, description, archived, reminder_days, reminder_hour, reminder_min, position)
+                VALUES (?, ?, ?, 0, ?, ?, ?, ?)
+            """
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (name as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (question as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(
+                stmt, 2, (question as NSString).utf8String, -1, nil)
             if let notes = notes, !notes.isEmpty {
-                sqlite3_bind_text(stmt, 3, (notes as NSString).utf8String, -1, nil)
+                sqlite3_bind_text(
+                    stmt, 3, (notes as NSString).utf8String, -1, nil)
             } else {
                 sqlite3_bind_null(stmt, 3)
             }
-            if let d = reminderDays { sqlite3_bind_int(stmt, 4, Int32(d)) } else { sqlite3_bind_null(stmt, 4) }
-            if let h = reminderHour { sqlite3_bind_int(stmt, 5, Int32(h)) } else { sqlite3_bind_null(stmt, 5) }
-            if let m = reminderMin { sqlite3_bind_int(stmt, 6, Int32(m)) } else { sqlite3_bind_null(stmt, 6) }
+            if let d = reminderDays {
+                sqlite3_bind_int(stmt, 4, Int32(d))
+            } else {
+                sqlite3_bind_null(stmt, 4)
+            }
+            if let h = reminderHour {
+                sqlite3_bind_int(stmt, 5, Int32(h))
+            } else {
+                sqlite3_bind_null(stmt, 5)
+            }
+            if let m = reminderMin {
+                sqlite3_bind_int(stmt, 6, Int32(m))
+            } else {
+                sqlite3_bind_null(stmt, 6)
+            }
             sqlite3_bind_int64(stmt, 7, sqlite3_int64(nextPosition))
 
             _ = sqlite3_step(stmt)
         } else {
-            print("addHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
+            print(
+                "addHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(stmt)
+        reload()
+    }
+
+    fileprivate func reload() {
+        // Refresh UI caches
         loadHabits()
         loadTodayRepetitions()
         loadRecentCompletions()
     }
-
 
     func deleteHabit(_ habit: Habit) {
         let begin = "BEGIN IMMEDIATE TRANSACTION;"
@@ -531,9 +575,7 @@ class DatabaseManager: ObservableObject {
 
         sqlite3_exec(db, commit, nil, nil, nil)
 
-        // Refresh UI caches
-        loadHabits()
-        loadTodayRepetitions()
+        reload()
     }
 
     private func nextHabitPosition() -> Int {
@@ -622,21 +664,23 @@ class DatabaseManager: ObservableObject {
         reminderMin: Int?
     ) {
         let sql = """
-            UPDATE Habits
-            SET name = ?, question = ?, description = ?,
-                reminder_days = ?, reminder_hour = ?, reminder_min = ?
-            WHERE Id = ?
-        """
+                UPDATE Habits
+                SET name = ?, question = ?, description = ?,
+                    reminder_days = ?, reminder_hour = ?, reminder_min = ?
+                WHERE Id = ?
+            """
 
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             // 1 name
             sqlite3_bind_text(stmt, 1, (name as NSString).utf8String, -1, nil)
             // 2 question
-            sqlite3_bind_text(stmt, 2, (question as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(
+                stmt, 2, (question as NSString).utf8String, -1, nil)
             // 3 description / notes
             if let notes = notes, !notes.isEmpty {
-                sqlite3_bind_text(stmt, 3, (notes as NSString).utf8String, -1, nil)
+                sqlite3_bind_text(
+                    stmt, 3, (notes as NSString).utf8String, -1, nil)
             } else {
                 sqlite3_bind_null(stmt, 3)
             }
@@ -663,7 +707,9 @@ class DatabaseManager: ObservableObject {
 
             _ = sqlite3_step(stmt)
         } else {
-            print("updateHabit prepare failed:", String(cString: sqlite3_errmsg(db)))
+            print(
+                "updateHabit prepare failed:",
+                String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(stmt)
     }
