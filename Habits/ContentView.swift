@@ -40,6 +40,8 @@ struct ContentView: View {
                 Button("Delete", role: .destructive) {
                     if let h = habitPendingDelete {
                         databaseManager.deleteHabit(h)
+                        // we must reschedule to get rid of any notifications scheduled by the deleted habit
+                        notificationManager.scheduleNotifications(for: databaseManager.habits)
                     }
                     habitPendingDelete = nil
                 }
