@@ -13,6 +13,8 @@ It can import the database of Loop and uses the same schema.
 - calendar view
 - month bar chart
 - habit colors (Loop's palette, light and dark variants)
+- skip days and notes on entries, in Loop's own encoding
+- settings for skip days and short-press toggling
 - archive habits
 - reorder habits
 - import loop database export

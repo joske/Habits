@@ -88,6 +88,18 @@ struct Repetition: Identifiable, Codable {
     let notes: String?
 }
 
+/// What is stored for one habit on one day.
+struct DayEntry {
+    var value: Int
+    var notes: String?
+
+    static let empty = DayEntry(value: Entry.no, notes: nil)
+
+    var isYes: Bool { Entry.isYes(value) }
+    var isSkip: Bool { value == Entry.skip }
+    var hasNote: Bool { !(notes ?? "").isEmpty }
+}
+
 struct Timestamp: Hashable, Comparable {
     let day: Int  // midnight UTC days since epoch
 
@@ -152,6 +164,17 @@ enum Entry {
     /// True for values that count as done in the UI, skips excluded.
     static func isYes(_ value: Int) -> Bool {
         value == yesManual || value == yesAuto
+    }
+
+    /// The value a day takes when toggled, matching Loop's nextToggleValue.
+    /// Question marks are not supported here, so `unknown` is never produced.
+    static func nextToggleValue(_ value: Int, isSkipEnabled: Bool) -> Int {
+        switch value {
+        case yesAuto: return yesManual
+        case yesManual: return isSkipEnabled ? skip : no
+        case skip: return no
+        default: return yesManual
+        }
     }
 }
 

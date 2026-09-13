@@ -32,7 +32,7 @@ class DatabaseManager: ObservableObject {
     @Published var todayRepetitions: [Int: Repetition] = [:]  // habit_id -> repetition
     // Map: habitId -> (dayOffset -> value)
     // dayOffset: 0 = today, 1 = yesterday, ...
-    @Published var recentCompletions: [Int: [Int: Int]] = [:]
+    @Published var recentCompletions: [Int: [Int: DayEntry]] = [:]
     /// When true, archived habits are included in `habits`.
     @Published var showArchived: Bool = false {
         didSet { loadHabits() }
@@ -421,7 +421,7 @@ class DatabaseManager: ObservableObject {
         let cutoff = day - (lastNDays - 1) * 86400
 
         let sql = """
-                SELECT habit, timestamp, value
+                SELECT habit, timestamp, value, notes
                 FROM Repetitions
                 WHERE timestamp >= ?
             """
@@ -435,13 +435,14 @@ class DatabaseManager: ObservableObject {
                 let tsDay =
                     Int(sqlite3_column_int64(stmt, 1)) / 86400 * 86400 / 1000
                 let value = Int(sqlite3_column_int(stmt, 2))
+                let notes = getString(statement: stmt, index: 3)
 
                 let offset = (day - tsDay) / 86400  // 0..lastNDays-1
                 guard offset >= 0 && offset < lastNDays else { continue }
 
                 var map = recentCompletions[habit] ?? [:]
-                // One row per habit and day, so the Entry value can stand
-                map[offset] = value
+                // One row per habit and day, so the entry can stand as it is
+                map[offset] = DayEntry(value: value, notes: notes)
                 recentCompletions[habit] = map
             }
         }
@@ -506,44 +507,70 @@ class DatabaseManager: ObservableObject {
         sqlite3_finalize(statement)
     }
 
-    func toggleHabit(_ habit: Habit, dayOffset: Int = 0) {
-        let now = Int(Date().timeIntervalSince1970)
-        let todayStart = (now / 86400) * 86400
-        let targetDay = (todayStart - (dayOffset * 86400)) * 1000
+    // MARK: - Entries
 
-        // Already done?
-        let query =
-            "SELECT id FROM Repetitions WHERE habit = ? AND timestamp = ?"
-        var stmt: OpaquePointer?
-        var existingId: Int?
+    /// Midnight UTC, the day key Loop stores in Repetitions.timestamp.
+    func dayStart(forOffset offset: Int) -> Int {
+        let today = Int(Date().timeIntervalSince1970) / 86_400 * 86_400
+        return today - (offset * 86_400)
+    }
 
-        if sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_int(stmt, 1, Int32(habit.id))
-            sqlite3_bind_int64(stmt, 2, Int64(targetDay))
-            if sqlite3_step(stmt) == SQLITE_ROW {
-                existingId = Int(sqlite3_column_int(stmt, 0))
-            }
+    func dayStart(for date: Date) -> Int {
+        Int(date.timeIntervalSince1970) / 86_400 * 86_400
+    }
+
+    func entry(for habit: Habit, dayStart: Int) -> DayEntry {
+        guard let rep = repetitionForHabit(habit.id, dayStart: dayStart) else {
+            return .empty
         }
-        sqlite3_finalize(stmt)
+        return DayEntry(value: rep.value, notes: rep.notes)
+    }
 
-        if let repId = existingId {
-            // remove repetition
-            let deleteSQL = "DELETE FROM Repetitions WHERE id = ?"
-            if sqlite3_prepare_v2(db, deleteSQL, -1, &stmt, nil) == SQLITE_OK {
-                sqlite3_bind_int(stmt, 1, Int32(repId))
-                sqlite3_step(stmt)
-            }
-            sqlite3_finalize(stmt)
+    /// Writes one day's entry. A plain "no" carrying no note is removed
+    /// instead, which is how an untouched day is already represented.
+    func setEntry(_ habit: Habit, dayStart: Int, value: Int, notes: String?) {
+        let trimmed = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+
+        if value == Entry.no && note == nil {
+            deleteRepetition(habitId: habit.id, dayStart: dayStart)
         } else {
-            // insert repetition
             addRepetition(
-                habitId: habit.id, timestamp: targetDay,
-                value: Entry.yesManual)
+                habitId: habit.id, timestamp: dayStart * 1000, value: value,
+                notes: note)
         }
 
         loadTodayRepetitions()
-        loadRecentCompletions(lastNDays: 5)
+        loadRecentCompletions()
     }
+
+    /// Advances a day through Loop's toggle cycle, keeping any note.
+    func toggleEntry(_ habit: Habit, dayStart: Int, skipEnabled: Bool) {
+        let current = entry(for: habit, dayStart: dayStart)
+        setEntry(
+            habit,
+            dayStart: dayStart,
+            value: Entry.nextToggleValue(
+                current.value, isSkipEnabled: skipEnabled),
+            notes: current.notes
+        )
+    }
+
+    private func deleteRepetition(habitId: Int, dayStart: Int) {
+        var stmt: OpaquePointer?
+        let sql = "DELETE FROM Repetitions WHERE habit = ? AND timestamp = ?"
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int(stmt, 1, Int32(habitId))
+            sqlite3_bind_int64(stmt, 2, Int64(dayStart * 1000))
+            if sqlite3_step(stmt) != SQLITE_DONE {
+                print(
+                    "deleteRepetition failed:",
+                    String(cString: sqlite3_errmsg(db)))
+            }
+        }
+        sqlite3_finalize(stmt)
+    }
+
 
     // MARK: - Inserts/Deletes
 
@@ -947,8 +974,8 @@ class DatabaseManager: ObservableObject {
     }
 
     // All done-days (boolean) or day->sum (numeric) between dates
-    func dayMapForHabit(_ habit: Habit, from: Date, to: Date) -> [Int: Int] {
-        var map: [Int: Int] = [:]
+    func dayMapForHabit(_ habit: Habit, from: Date, to: Date) -> [Int: DayEntry] {
+        var map: [Int: DayEntry] = [:]
 
         let cal = Calendar.current
         let fromStart = cal.startOfDay(for: from)
@@ -960,7 +987,7 @@ class DatabaseManager: ObservableObject {
 
         let scale = timestampsAreMillis ? 1000 : 1
         let sql = """
-                SELECT timestamp, value
+                SELECT timestamp, value, notes
                 FROM Repetitions
                 WHERE habit = ? AND timestamp BETWEEN ? AND ?
             """
@@ -973,11 +1000,14 @@ class DatabaseManager: ObservableObject {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let tsRaw = Int(sqlite3_column_int64(stmt, 0))
                 let vRaw = Int(sqlite3_column_int(stmt, 1))
+                let notes = getString(statement: stmt, index: 2)
                 let day = dayStartSeconds(from: tsRaw)
                 if habit.type == 0 {
-                    map[day] = vRaw  // boolean: the Entry value itself
+                    map[day] = DayEntry(value: vRaw, notes: notes)
                 } else {
-                    map[day, default: 0] += vRaw  // numeric: sum
+                    // numeric: sum the day's values
+                    let running = (map[day]?.value ?? 0) + vRaw
+                    map[day] = DayEntry(value: running, notes: notes)
                 }
             }
         } else {
@@ -1024,11 +1054,12 @@ class DatabaseManager: ObservableObject {
             for d in 0..<daysInMonth {
                 let date = cal.date(byAdding: .day, value: d, to: anchor)!
                 let key = (Int(date.timeIntervalSince1970) / 86_400) * 86_400
+                let entry = dayMap[key] ?? .empty
                 if habit.type == 0 {
-                    if Entry.isYes(dayMap[key] ?? Entry.no) { count += 1 }
+                    if entry.isYes { count += 1 }
                 } else {
                     // or compare against targetValue if you want “met target”
-                    if (dayMap[key] ?? 0) > 0 { count += 1 }
+                    if entry.value > 0 { count += 1 }
                 }
             }
 
@@ -1036,52 +1067,6 @@ class DatabaseManager: ObservableObject {
         }
 
         return buckets
-    }
-
-    // Toggle a specific calendar day (used by the calendar grid)
-    func toggleHabit(_ habit: Habit, on date: Date) {
-        let dayStart = (Int(date.timeIntervalSince1970) / 86_400) * 86_400
-
-        // check existing
-        var stmt: OpaquePointer?
-        var existingId: Int?
-        if sqlite3_prepare_v2(
-            db, "SELECT id FROM Repetitions WHERE habit = ? AND timestamp = ?",
-            -1, &stmt, nil) == SQLITE_OK
-        {
-            sqlite3_bind_int(stmt, 1, Int32(habit.id))
-            sqlite3_bind_int64(stmt, 2, Int64(dayStart * 1000))
-            if sqlite3_step(stmt) == SQLITE_ROW {
-                existingId = Int(sqlite3_column_int(stmt, 0))
-            }
-        }
-        sqlite3_finalize(stmt)
-
-        if let id = existingId {
-            if sqlite3_prepare_v2(
-                db, "DELETE FROM Repetitions WHERE id = ?", -1, &stmt, nil)
-                == SQLITE_OK
-            {
-                sqlite3_bind_int(stmt, 1, Int32(id))
-                _ = sqlite3_step(stmt)
-            }
-            sqlite3_finalize(stmt)
-        } else {
-            let sql =
-                """
-                    INSERT INTO Repetitions (habit, timestamp, value, notes)
-                    VALUES (?, ?, \(Entry.yesManual), NULL)
-                """
-            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-                sqlite3_bind_int(stmt, 1, Int32(habit.id))
-                sqlite3_bind_int64(stmt, 2, Int64(dayStart * 1000))
-                _ = sqlite3_step(stmt)
-            }
-            sqlite3_finalize(stmt)
-        }
-
-        loadTodayRepetitions()
-        loadRecentCompletions()
     }
 
 }

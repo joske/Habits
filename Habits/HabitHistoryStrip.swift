@@ -9,54 +9,71 @@ import SwiftUI
 
 struct HabitHistoryStrip: View {
     let color: Color
-    let completions: [Int: Int]   // dayOffset -> value
+    let entries: [Int: DayEntry]   // dayOffset -> entry
     let days: Int = 5
-    let onToggleDay: (Int) -> Void   // offset tapped
+    let onToggleDay: (Int) -> Void   // offset toggled
+    let onEditDay: (Int) -> Void     // offset opened in the editor
+
+    @AppStorage(SettingsKey.shortToggleEnabled) private var shortToggle = false
 
     var body: some View {
         HStack(spacing: 8) {
             ForEach((0..<days), id: \.self) { offset in
-                DayBox(value: completions[offset] ?? Entry.no, color: color)
-                    .onTapGesture { onToggleDay(offset) }
+                DayBox(entry: entries[offset] ?? .empty, color: color)
+                    .onTapGesture {
+                        if shortToggle { onToggleDay(offset) } else { onEditDay(offset) }
+                    }
+                    .onLongPressGesture {
+                        if shortToggle { onEditDay(offset) } else { onToggleDay(offset) }
+                    }
             }
         }
     }
 
     struct DayBox: View {
-        let value: Int
+        let entry: DayEntry
         let color: Color
 
-        private var done: Bool { Entry.isYes(value) }
-        private var skipped: Bool { value == Entry.skip }
-
         var body: some View {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(
-                        done || skipped ? color : .secondary.opacity(0.25),
-                        lineWidth: 1
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(done ? color.opacity(0.15) : Color.clear)
-                    )
-                    .opacity(skipped ? 0.4 : 1)
-                    .frame(width: 28, height: 24)
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(
+                            entry.isYes || entry.isSkip
+                                ? color : .secondary.opacity(0.25),
+                            lineWidth: 1
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(entry.isYes ? color.opacity(0.15) : Color.clear)
+                        )
+                        .opacity(entry.isSkip ? 0.4 : 1)
+                        .frame(width: 28, height: 24)
 
-                if done {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(color)
-                } else if skipped {
-                    Image(systemName: "minus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(color.opacity(0.5))
-                } else {
-                    Text("×")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary.opacity(0.4))
+                    if entry.isYes {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(color)
+                    } else if entry.isSkip {
+                        Image(systemName: "minus")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(color.opacity(0.5))
+                    } else {
+                        Text("×")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary.opacity(0.4))
+                    }
+                }
+
+                if entry.hasNote {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 5, height: 5)
+                        .offset(x: 2, y: -2)
+                        .accessibilityLabel("Has a note")
                 }
             }
+            .frame(width: 28, height: 24)
         }
     }
 }

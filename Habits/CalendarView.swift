@@ -9,6 +9,10 @@ import SwiftUI
 
 struct HabitMonthCalendar: View {
     @EnvironmentObject var database: DatabaseManager
+    @AppStorage(SettingsKey.skipEnabled) private var skipEnabled = false
+    @AppStorage(SettingsKey.shortToggleEnabled) private var shortToggle = false
+    @State private var editingDay: EditingDay?
+
     let habit: Habit
     let monthStart: Date  // any date inside the month
 
@@ -39,7 +43,7 @@ struct HabitMonthCalendar: View {
     private var monthEnd: Date {
         cal.date(byAdding: DateComponents(month: 1, day: -1), to: monthAnchor)!
     }
-    private var dayMap: [Int: Int] {
+    private var dayMap: [Int: DayEntry] {
         database.dayMapForHabit(habit, from: firstOfMonth, to: monthEnd)
     }
 
@@ -68,12 +72,29 @@ struct HabitMonthCalendar: View {
             }
         }
         .padding(.vertical, 6)
+        .sheet(item: $editingDay) { day in
+            DayEditorView(day: day)
+                .environmentObject(database)
+        }
     }
 
     private func monthTitle(_ date: Date) -> String {
         let df = DateFormatter()
         df.dateFormat = "LLLL yyyy"
         return df.string(from: date)
+    }
+
+    private func toggle(_ date: Date) {
+        database.toggleEntry(
+            habit, dayStart: database.dayStart(for: date),
+            skipEnabled: skipEnabled)
+    }
+
+    private func edit(_ date: Date) {
+        let day = database.dayStart(for: date)
+        editingDay = EditingDay(
+            habit: habit, dayStart: day,
+            entry: database.entry(for: habit, dayStart: day))
     }
 
     private func weekdaySymbol(_ idx: Int) -> String {
@@ -92,14 +113,11 @@ struct HabitMonthCalendar: View {
             let date = cal.date(
                 byAdding: .day, value: day - 1, to: monthAnchor)!
             let key = (Int(date.timeIntervalSince1970) / 86_400) * 86_400
-            let value = dayMap[key] ?? Entry.no
-            let done =
-                habit.type == 0 ? Entry.isYes(value) : (value > 0)
-            let skipped = habit.type == 0 && value == Entry.skip
+            let entry = dayMap[key] ?? .empty
+            let done = habit.type == 0 ? entry.isYes : (entry.value > 0)
+            let skipped = habit.type == 0 && entry.isSkip
 
-            Button {
-                database.toggleHabit(habit, on: date)
-            } label: {
+            ZStack(alignment: .topTrailing) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(done ? habit.tint : Color.gray)
@@ -109,8 +127,22 @@ struct HabitMonthCalendar: View {
                         .font(.caption2)
                         .foregroundStyle(done ? .white : .primary)
                 }
+
+                if entry.hasNote {
+                    Circle()
+                        .fill(done ? Color.white : habit.tint)
+                        .frame(width: 5, height: 5)
+                        .padding(3)
+                        .accessibilityLabel("Has a note")
+                }
             }
-            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if shortToggle { toggle(date) } else { edit(date) }
+            }
+            .onLongPressGesture {
+                if shortToggle { edit(date) } else { toggle(date) }
+            }
         }
     }
 

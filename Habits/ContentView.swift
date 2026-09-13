@@ -13,6 +13,8 @@ struct ContentView: View {
     @StateObject private var notificationManager = NotificationManager.shared
     @State private var showingAddHabit = false
     @State private var showingSettings = false
+    @State private var editingDay: EditingDay?
+    @AppStorage(SettingsKey.skipEnabled) private var skipEnabled = false
     @State private var showingImporter = false
     @State private var importError: String?
     @State private var habitPendingDelete: Habit?
@@ -58,6 +60,10 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .sheet(item: $editingDay) { day in
+                DayEditorView(day: day)
+                    .environmentObject(databaseManager)
             }
             .fileExporter(
                 isPresented: $showingExporter,
@@ -111,7 +117,7 @@ struct ContentView: View {
     // MARK: - Helper Views
     @ViewBuilder
     private func habitRow(for habit: Habit) -> some View {
-        let completions: [Int: Int] = databaseManager.recentCompletions[habit.id] ?? [:]
+        let entries = databaseManager.recentCompletions[habit.id] ?? [:]
 
         NavigationLink(
             destination: HabitDetailView(habit: habit)
@@ -119,9 +125,21 @@ struct ContentView: View {
         ) {
             HabitRowView(
                 habit: habit,
-                completions: completions,
+                entries: entries,
                 onToggleDay: { offset in
-                    databaseManager.toggleHabit(habit, dayOffset: offset)
+                    databaseManager.toggleEntry(
+                        habit,
+                        dayStart: databaseManager.dayStart(forOffset: offset),
+                        skipEnabled: skipEnabled
+                    )
+                },
+                onEditDay: { offset in
+                    let day = databaseManager.dayStart(forOffset: offset)
+                    editingDay = EditingDay(
+                        habit: habit,
+                        dayStart: day,
+                        entry: databaseManager.entry(for: habit, dayStart: day)
+                    )
                 }
             )
         }
