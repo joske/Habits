@@ -35,17 +35,8 @@ struct HabitDetailView: View {
             }
         }
         .sheet(isPresented: $showingEdit) {
-            EditHabitView(habit: habit) {
-                name, question, notes, reminderDays, hour, minute in
-                databaseManager.updateHabit(
-                    habitId: habit.id,
-                    name: name,
-                    question: question,
-                    notes: notes.isEmpty ? nil : notes,
-                    reminderDays: reminderDays,
-                    reminderHour: hour,
-                    reminderMin: minute
-                )
+            EditHabitView(habit: habit) { draft in
+                databaseManager.updateHabit(habitId: habit.id, draft: draft)
                 databaseManager.loadHabits()
                 NotificationManager.shared.scheduleNotifications(
                     for: databaseManager.habits)

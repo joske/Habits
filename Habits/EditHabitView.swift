@@ -12,8 +12,7 @@ struct EditHabitView: View {
     @Environment(\.dismiss) private var dismiss
 
     let habit: Habit
-    let onSave: (_ name: String, _ question: String, _ notes: String,
-                 _ reminderDays: Int?, _ hour: Int?, _ minute: Int?) -> Void
+    let onSave: (HabitDraft) -> Void
 
     @State private var name: String
     @State private var question: String
@@ -24,9 +23,7 @@ struct EditHabitView: View {
     @State private var reminderDate: Date
     @State private var dayToggles: [Bool] // Sun..Sat
 
-    init(habit: Habit,
-         onSave: @escaping (_ name: String, _ question: String, _ notes: String,
-                            _ reminderDays: Int?, _ hour: Int?, _ minute: Int?) -> Void) {
+    init(habit: Habit, onSave: @escaping (HabitDraft) -> Void) {
         self.habit = habit
         self.onSave = onSave
         _name = State(initialValue: habit.name)
@@ -77,11 +74,16 @@ struct EditHabitView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let mask = hasReminder ? bitmask(from: dayToggles) : nil
                         let comps = Calendar.current.dateComponents([.hour, .minute], from: reminderDate)
-                        let hour = hasReminder ? comps.hour : nil
-                        let minute = hasReminder ? comps.minute : nil
-                        onSave(name, question, notes, mask, hour, minute)
+
+                        onSave(HabitDraft(
+                            name: name,
+                            question: question,
+                            notes: notes,
+                            reminderDays: hasReminder ? bitmask(from: dayToggles) : nil,
+                            reminderHour: hasReminder ? comps.hour : nil,
+                            reminderMin: hasReminder ? comps.minute : nil
+                        ))
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

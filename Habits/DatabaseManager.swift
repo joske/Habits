@@ -485,14 +485,7 @@ class DatabaseManager: ObservableObject {
 
     // MARK: - Inserts/Deletes
 
-    func addHabit(
-        name: String,
-        question: String,
-        notes: String?,
-        reminderDays: Int?,
-        reminderHour: Int?,
-        reminderMin: Int?
-    ) {
+    func addHabit(_ draft: HabitDraft) {
         let nextPosition = nextHabitPosition()
         let sql = """
                 INSERT INTO Habits
@@ -501,26 +494,27 @@ class DatabaseManager: ObservableObject {
             """
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (name as NSString).utf8String, -1, nil)
             sqlite3_bind_text(
-                stmt, 2, (question as NSString).utf8String, -1, nil)
-            if let notes = notes, !notes.isEmpty {
+                stmt, 1, (draft.name as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(
+                stmt, 2, (draft.question as NSString).utf8String, -1, nil)
+            if !draft.notes.isEmpty {
                 sqlite3_bind_text(
-                    stmt, 3, (notes as NSString).utf8String, -1, nil)
+                    stmt, 3, (draft.notes as NSString).utf8String, -1, nil)
             } else {
                 sqlite3_bind_null(stmt, 3)
             }
-            if let d = reminderDays {
+            if let d = draft.reminderDays {
                 sqlite3_bind_int(stmt, 4, Int32(d))
             } else {
                 sqlite3_bind_null(stmt, 4)
             }
-            if let h = reminderHour {
+            if let h = draft.reminderHour {
                 sqlite3_bind_int(stmt, 5, Int32(h))
             } else {
                 sqlite3_bind_null(stmt, 5)
             }
-            if let m = reminderMin {
+            if let m = draft.reminderMin {
                 sqlite3_bind_int(stmt, 6, Int32(m))
             } else {
                 sqlite3_bind_null(stmt, 6)
@@ -535,6 +529,7 @@ class DatabaseManager: ObservableObject {
         sqlite3_finalize(stmt)
         reload()
     }
+
 
     fileprivate func reload() {
         // Refresh UI caches
@@ -654,15 +649,7 @@ class DatabaseManager: ObservableObject {
         sqlite3_finalize(statement)
     }
 
-    func updateHabit(
-        habitId: Int,
-        name: String,
-        question: String,
-        notes: String?,
-        reminderDays: Int?,
-        reminderHour: Int?,
-        reminderMin: Int?
-    ) {
+    func updateHabit(habitId: Int, draft: HabitDraft) {
         let sql = """
                 UPDATE Habits
                 SET name = ?, question = ?, description = ?,
@@ -672,37 +659,31 @@ class DatabaseManager: ObservableObject {
 
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            // 1 name
-            sqlite3_bind_text(stmt, 1, (name as NSString).utf8String, -1, nil)
-            // 2 question
             sqlite3_bind_text(
-                stmt, 2, (question as NSString).utf8String, -1, nil)
-            // 3 description / notes
-            if let notes = notes, !notes.isEmpty {
+                stmt, 1, (draft.name as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(
+                stmt, 2, (draft.question as NSString).utf8String, -1, nil)
+            if !draft.notes.isEmpty {
                 sqlite3_bind_text(
-                    stmt, 3, (notes as NSString).utf8String, -1, nil)
+                    stmt, 3, (draft.notes as NSString).utf8String, -1, nil)
             } else {
                 sqlite3_bind_null(stmt, 3)
             }
-            // 4 reminder_days
-            if let d = reminderDays {
+            if let d = draft.reminderDays {
                 sqlite3_bind_int(stmt, 4, Int32(d))
             } else {
                 sqlite3_bind_null(stmt, 4)
             }
-            // 5 reminder_hour
-            if let h = reminderHour {
+            if let h = draft.reminderHour {
                 sqlite3_bind_int(stmt, 5, Int32(h))
             } else {
                 sqlite3_bind_null(stmt, 5)
             }
-            // 6 reminder_min
-            if let m = reminderMin {
+            if let m = draft.reminderMin {
                 sqlite3_bind_int(stmt, 6, Int32(m))
             } else {
                 sqlite3_bind_null(stmt, 6)
             }
-            // 7 id
             sqlite3_bind_int(stmt, 7, Int32(habitId))
 
             _ = sqlite3_step(stmt)
@@ -713,6 +694,7 @@ class DatabaseManager: ObservableObject {
         }
         sqlite3_finalize(stmt)
     }
+
 
     // MARK: - Column helpers
 

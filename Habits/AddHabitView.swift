@@ -17,9 +17,7 @@ struct AddHabitView: View {
     @State private var reminderTime = Calendar.current.date(from: DateComponents(hour: 9, minute: 0)) ?? Date()
     @State private var dayToggles: [Bool] = Array(repeating: true, count: 7) // Sun..Sat default ON
 
-    /// name, question, notes, reminderDays bitmask, hour, minute
-    let onSave: (_ name: String, _ question: String, _ notes: String,
-                 _ reminderDays: Int?, _ hour: Int?, _ minute: Int?) -> Void
+    let onSave: (HabitDraft) -> Void
 
     var body: some View {
         NavigationView {
@@ -59,16 +57,16 @@ struct AddHabitView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                        let mask = reminderEnabled ? bitmask(from: dayToggles) : nil
                         let comps = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
-                        let hr = reminderEnabled ? comps.hour : nil
-                        let min = reminderEnabled ? comps.minute : nil
 
-                        onSave(trimmedName, trimmedQuestion, trimmedNotes, mask, hr, min)
+                        onSave(HabitDraft(
+                            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            question: question.trimmingCharacters(in: .whitespacesAndNewlines),
+                            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
+                            reminderDays: reminderEnabled ? bitmask(from: dayToggles) : nil,
+                            reminderHour: reminderEnabled ? comps.hour : nil,
+                            reminderMin: reminderEnabled ? comps.minute : nil
+                        ))
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

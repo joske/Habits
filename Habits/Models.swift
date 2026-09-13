@@ -39,6 +39,43 @@ struct Habit: Identifiable, Codable {
     }
 }
 
+/// The editable fields of a habit, shared by the add and edit forms.
+struct HabitDraft {
+    var name: String
+    var question: String
+    var notes: String
+    var reminderDays: Int?
+    var reminderHour: Int?
+    var reminderMin: Int?
+
+    init(
+        name: String = "",
+        question: String = "",
+        notes: String = "",
+        reminderDays: Int? = nil,
+        reminderHour: Int? = nil,
+        reminderMin: Int? = nil
+    ) {
+        self.name = name
+        self.question = question
+        self.notes = notes
+        self.reminderDays = reminderDays
+        self.reminderHour = reminderHour
+        self.reminderMin = reminderMin
+    }
+
+    init(habit: Habit) {
+        self.init(
+            name: habit.name,
+            question: habit.question ?? "",
+            notes: habit.description ?? "",
+            reminderDays: habit.hasReminder ? habit.reminderDays : nil,
+            reminderHour: habit.hasReminder ? habit.reminderHour : nil,
+            reminderMin: habit.hasReminder ? habit.reminderMin : nil
+        )
+    }
+}
+
 struct Repetition: Identifiable, Codable {
     let id: Int?
     let habit: Int
