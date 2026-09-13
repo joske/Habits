@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var showingExporter = false
     @State private var exportDoc: SQLiteDocument?
     @State private var exportError: String?
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationView {
@@ -29,11 +30,13 @@ struct ContentView: View {
                 HistoryHeader()
                 ForEach(databaseManager.habits) { habit in
                     habitRow(for: habit)
+                        .moveDisabled(!editMode.isEditing)
                 }
                 .onMove { source, destination in
                     databaseManager.moveHabits(from: source, to: destination)
                 }
             }
+            .environment(\.editMode, $editMode)
             .navigationTitle("Habits")
             .toolbar {
                 toolbarItems
@@ -169,7 +172,11 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
         ToolbarItem(placement: .navigationBarLeading) {
-            EditButton()
+            Button(editMode.isEditing ? "Done" : "Edit") {
+                withAnimation {
+                    editMode = editMode.isEditing ? .inactive : .active
+                }
+            }
         }
 
         ToolbarItemGroup(placement: .navigationBarTrailing) {

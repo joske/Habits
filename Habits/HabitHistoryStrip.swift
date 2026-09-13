@@ -29,9 +29,13 @@ struct HabitHistoryStrip: View {
                     .onTapGesture {
                         if shortToggle { onToggleDay(offset) } else { onEditDay(offset) }
                     }
-                    .onLongPressGesture {
-                        if shortToggle { onEditDay(offset) } else { onToggleDay(offset) }
-                    }
+                    // A plain .onLongPressGesture loses to the List row's own
+                    // recognizers, so this one has to outrank them
+                    .highPriorityGesture(
+                        LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                            if shortToggle { onEditDay(offset) } else { onToggleDay(offset) }
+                        }
+                    )
             }
         }
     }
