@@ -27,6 +27,9 @@ struct ContentView: View {
                 ForEach(databaseManager.habits) { habit in
                     habitRow(for: habit)
                 }
+                .onMove { source, destination in
+                    databaseManager.moveHabits(from: source, to: destination)
+                }
             }
             .navigationTitle("Habits")
             .toolbar {
@@ -132,7 +135,12 @@ struct ContentView: View {
         }
     }
 
+    @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            EditButton()
+        }
+
         ToolbarItemGroup(placement: .navigationBarTrailing) {
             Button {
                 showingAddHabit = true

@@ -718,7 +718,7 @@ class DatabaseManager: ObservableObject {
         sqlite3_finalize(stmt)
     }
 
-    // MARK: - Archiving
+    // MARK: - Archiving and ordering
 
     func setArchived(_ habit: Habit, archived: Bool) {
         var stmt: OpaquePointer?
@@ -732,6 +732,59 @@ class DatabaseManager: ObservableObject {
         }
         sqlite3_finalize(stmt)
         loadHabits()
+    }
+
+    /// Reorders the habits currently shown in the list. Habits hidden by the
+    /// archived filter keep their relative order and move to the end.
+    func moveHabits(from source: IndexSet, to destination: Int) {
+        var visible = habits
+        visible.move(fromOffsets: source, toOffset: destination)
+
+        let visibleIds = visible.map { $0.id }
+        let hiddenIds = habitIdsByPosition().filter { !visibleIds.contains($0) }
+        persistPositions(of: visibleIds + hiddenIds)
+        loadHabits()
+    }
+
+    private func habitIdsByPosition() -> [Int] {
+        var ids: [Int] = []
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(
+            db, "SELECT Id FROM Habits ORDER BY position", -1, &stmt, nil)
+            == SQLITE_OK
+        {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                ids.append(Int(sqlite3_column_int(stmt, 0)))
+            }
+        }
+        sqlite3_finalize(stmt)
+        return ids
+    }
+
+    private func persistPositions(of ids: [Int]) {
+        var stmt: OpaquePointer?
+        sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION;", nil, nil, nil)
+        if sqlite3_prepare_v2(
+            db, "UPDATE Habits SET position = ? WHERE Id = ?", -1, &stmt, nil)
+            == SQLITE_OK
+        {
+            for (position, id) in ids.enumerated() {
+                sqlite3_bind_int(stmt, 1, Int32(position))
+                sqlite3_bind_int(stmt, 2, Int32(id))
+                if sqlite3_step(stmt) != SQLITE_DONE {
+                    print(
+                        "persistPositions failed:",
+                        String(cString: sqlite3_errmsg(db)))
+                }
+                sqlite3_reset(stmt)
+            }
+        } else {
+            print(
+                "persistPositions prepare failed:",
+                String(cString: sqlite3_errmsg(db)))
+        }
+        sqlite3_finalize(stmt)
+        sqlite3_exec(db, "COMMIT;", nil, nil, nil)
     }
 
     // MARK: - Binding helpers
