@@ -92,8 +92,10 @@ struct HabitMonthCalendar: View {
             let date = cal.date(
                 byAdding: .day, value: day - 1, to: monthAnchor)!
             let key = (Int(date.timeIntervalSince1970) / 86_400) * 86_400
+            let value = dayMap[key] ?? Entry.no
             let done =
-                habit.type == 0 ? (dayMap[key] == 1) : ((dayMap[key] ?? 0) > 0)
+                habit.type == 0 ? Entry.isYes(value) : (value > 0)
+            let skipped = habit.type == 0 && value == Entry.skip
 
             Button {
                 database.toggleHabit(habit, on: date)
@@ -101,6 +103,7 @@ struct HabitMonthCalendar: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(done ? habit.tint : Color.gray)
+                        .opacity(skipped ? 0.35 : 1)
                         .frame(height: 28)
                     Text("\(day)")
                         .font(.caption2)

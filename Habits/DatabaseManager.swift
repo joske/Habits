@@ -49,7 +49,7 @@ class DatabaseManager: ObservableObject {
         dbPath = fileURL.path
         openDatabase()
         createTables()
-        repairHabits()
+        repairDatabase()
         reload()
     }
 
@@ -148,16 +148,22 @@ class DatabaseManager: ObservableObject {
 
     /// Backfills columns that earlier versions of this app left empty when
     /// creating a habit. Without a frequency the score is NaN, and without a
-    /// uuid all habits share the same notification identifiers.
-    private func repairHabits() {
+    /// uuid all habits share the same notification identifiers. Checked days
+    /// were stored as 1, which is Loop's yes-auto and builds no strength.
+    private func repairDatabase() {
         let statements = [
             "UPDATE Habits SET freq_num = 1 WHERE freq_num IS NULL OR freq_num < 1;",
             "UPDATE Habits SET freq_den = 1 WHERE freq_den IS NULL OR freq_den < 1;",
             "UPDATE Habits SET color = \(HabitPalette.defaultIndex) WHERE color IS NULL;",
             "UPDATE Habits SET archived = 0 WHERE archived IS NULL;",
+            """
+            UPDATE Repetitions SET value = \(Entry.yesManual)
+            WHERE value = \(Entry.yesAuto)
+              AND habit IN (SELECT Id FROM Habits WHERE type = 0);
+            """,
         ]
         for sql in statements where sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
-            print("repairHabits failed:", String(cString: sqlite3_errmsg(db)))
+            print("repairDatabase failed:", String(cString: sqlite3_errmsg(db)))
         }
 
         var stmt: OpaquePointer?
@@ -182,7 +188,7 @@ class DatabaseManager: ObservableObject {
                 sqlite3_bind_int(stmt, 2, Int32(id))
                 if sqlite3_step(stmt) != SQLITE_DONE {
                     print(
-                        "repairHabits uuid failed:",
+                        "repairDatabase uuid failed:",
                         String(cString: sqlite3_errmsg(db)))
                 }
                 sqlite3_reset(stmt)
@@ -277,7 +283,7 @@ class DatabaseManager: ObservableObject {
         // 8) Reopen and reload
         openDatabase()
         createTables()
-        repairHabits()
+        repairDatabase()
         reload()
     }
 
@@ -434,8 +440,8 @@ class DatabaseManager: ObservableObject {
                 guard offset >= 0 && offset < lastNDays else { continue }
 
                 var map = recentCompletions[habit] ?? [:]
-                // If the same day has multiple repetitions, sum them (or set 1 if binary)
-                map[offset] = (map[offset] ?? 0) + value
+                // One row per habit and day, so the Entry value can stand
+                map[offset] = value
                 recentCompletions[habit] = map
             }
         }
@@ -530,7 +536,9 @@ class DatabaseManager: ObservableObject {
             sqlite3_finalize(stmt)
         } else {
             // insert repetition
-            addRepetition(habitId: habit.id, timestamp: targetDay, value: 1)
+            addRepetition(
+                habitId: habit.id, timestamp: targetDay,
+                value: Entry.yesManual)
         }
 
         loadTodayRepetitions()
@@ -865,12 +873,8 @@ class DatabaseManager: ObservableObject {
 
             if let rep = rep {
                 if habit.type == 0 {
-                    if rep.value > 0 {
-                        // Boolean habit: 1 = done
-                        result.append(Entry.yesManual)
-                    } else {
-                        result.append(0)
-                    }
+                    // Boolean habit: the stored value is already an Entry
+                    result.append(rep.value)
                 } else {
                     // Numerical habit: use stored value
                     result.append(rep.value)
@@ -971,7 +975,7 @@ class DatabaseManager: ObservableObject {
                 let vRaw = Int(sqlite3_column_int(stmt, 1))
                 let day = dayStartSeconds(from: tsRaw)
                 if habit.type == 0 {
-                    if vRaw > 0 { map[day] = 1 }  // boolean: mark done
+                    map[day] = vRaw  // boolean: the Entry value itself
                 } else {
                     map[day, default: 0] += vRaw  // numeric: sum
                 }
@@ -1021,7 +1025,7 @@ class DatabaseManager: ObservableObject {
                 let date = cal.date(byAdding: .day, value: d, to: anchor)!
                 let key = (Int(date.timeIntervalSince1970) / 86_400) * 86_400
                 if habit.type == 0 {
-                    if dayMap[key] == 1 { count += 1 }
+                    if Entry.isYes(dayMap[key] ?? Entry.no) { count += 1 }
                 } else {
                     // or compare against targetValue if you want “met target”
                     if (dayMap[key] ?? 0) > 0 { count += 1 }
@@ -1064,7 +1068,10 @@ class DatabaseManager: ObservableObject {
             sqlite3_finalize(stmt)
         } else {
             let sql =
-                "INSERT INTO Repetitions (habit, timestamp, value, notes) VALUES (?, ?, 1, NULL)"
+                """
+                    INSERT INTO Repetitions (habit, timestamp, value, notes)
+                    VALUES (?, ?, \(Entry.yesManual), NULL)
+                """
             if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
                 sqlite3_bind_int(stmt, 1, Int32(habit.id))
                 sqlite3_bind_int64(stmt, 2, Int64(dayStart * 1000))

@@ -133,9 +133,26 @@ enum NumericalHabitType {
     case atMost
 }
 
+/// Values stored in `Repetitions.value`, matching Loop's Entry constants.
+/// Loop's migration 16 backfilled every existing repetition to `yesManual`,
+/// so these are the numbers a Loop backup actually contains.
 enum Entry {
-    static let skip = -1
-    static let yesManual = 1
+    /// No data for this day. Loop does not store a row for it.
+    static let unknown = -1
+    /// The habit was expected but not performed.
+    static let no = 0
+    /// Not performed, but not expected either, because of the habit's
+    /// frequency. Loop derives these for display; they do not build strength.
+    static let yesAuto = 1
+    /// The user checked this day off.
+    static let yesManual = 2
+    /// The day does not apply. Neutral: it neither builds nor decays strength.
+    static let skip = 3
+
+    /// True for values that count as done in the UI, skips excluded.
+    static func isYes(_ value: Int) -> Bool {
+        value == yesManual || value == yesAuto
+    }
 }
 
 struct Score: Identifiable {
