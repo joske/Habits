@@ -87,6 +87,17 @@ struct ContentView: View {
             ) { result in
                 handleFileImport(result)
             }
+            .alert(
+                "Import Failed",
+                isPresented: Binding(
+                    get: { importError != nil },
+                    set: { _ in importError = nil }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(importError ?? "")
+            }
         }
         .onAppear {
             setupOnAppear()
