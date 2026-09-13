@@ -45,6 +45,7 @@ class DatabaseManager: ObservableObject {
         dbPath = fileURL.path
         openDatabase()
         createTables()
+        repairHabits()
         reload()
     }
 
@@ -139,6 +140,52 @@ class DatabaseManager: ObservableObject {
         }
     }
 
+    // MARK: - Repair
+
+    /// Backfills columns that earlier versions of this app left empty when
+    /// creating a habit. Without a frequency the score is NaN, and without a
+    /// uuid all habits share the same notification identifiers.
+    private func repairHabits() {
+        let statements = [
+            "UPDATE Habits SET freq_num = 1 WHERE freq_num IS NULL OR freq_num < 1;",
+            "UPDATE Habits SET freq_den = 1 WHERE freq_den IS NULL OR freq_den < 1;",
+            "UPDATE Habits SET archived = 0 WHERE archived IS NULL;",
+        ]
+        for sql in statements where sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
+            print("repairHabits failed:", String(cString: sqlite3_errmsg(db)))
+        }
+
+        var stmt: OpaquePointer?
+        var idsWithoutUUID: [Int] = []
+        if sqlite3_prepare_v2(
+            db, "SELECT Id FROM Habits WHERE uuid IS NULL OR uuid = ''", -1,
+            &stmt, nil) == SQLITE_OK
+        {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                idsWithoutUUID.append(Int(sqlite3_column_int(stmt, 0)))
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        guard !idsWithoutUUID.isEmpty else { return }
+        if sqlite3_prepare_v2(
+            db, "UPDATE Habits SET uuid = ? WHERE Id = ?", -1, &stmt, nil)
+            == SQLITE_OK
+        {
+            for id in idsWithoutUUID {
+                bind(stmt, 1, text: newHabitUUID())
+                sqlite3_bind_int(stmt, 2, Int32(id))
+                if sqlite3_step(stmt) != SQLITE_DONE {
+                    print(
+                        "repairHabits uuid failed:",
+                        String(cString: sqlite3_errmsg(db)))
+                }
+                sqlite3_reset(stmt)
+            }
+        }
+        sqlite3_finalize(stmt)
+    }
+
     // MARK: - Import external DB
 
     func importExternalDatabase(from pickedURL: URL) throws {
@@ -225,6 +272,7 @@ class DatabaseManager: ObservableObject {
         // 8) Reopen and reload
         openDatabase()
         createTables()
+        repairHabits()
         reload()
     }
 
@@ -486,41 +534,22 @@ class DatabaseManager: ObservableObject {
     // MARK: - Inserts/Deletes
 
     func addHabit(_ draft: HabitDraft) {
-        let nextPosition = nextHabitPosition()
         let sql = """
                 INSERT INTO Habits
-                (name, question, description, archived, reminder_days, reminder_hour, reminder_min, position)
-                VALUES (?, ?, ?, 0, ?, ?, ?, ?)
+                (name, question, description, archived, freq_num, freq_den,
+                 reminder_days, reminder_hour, reminder_min, position, uuid)
+                VALUES (?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?)
             """
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(
-                stmt, 1, (draft.name as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(
-                stmt, 2, (draft.question as NSString).utf8String, -1, nil)
-            if !draft.notes.isEmpty {
-                sqlite3_bind_text(
-                    stmt, 3, (draft.notes as NSString).utf8String, -1, nil)
-            } else {
-                sqlite3_bind_null(stmt, 3)
-            }
-            if let d = draft.reminderDays {
-                sqlite3_bind_int(stmt, 4, Int32(d))
-            } else {
-                sqlite3_bind_null(stmt, 4)
-            }
-            if let h = draft.reminderHour {
-                sqlite3_bind_int(stmt, 5, Int32(h))
-            } else {
-                sqlite3_bind_null(stmt, 5)
-            }
-            if let m = draft.reminderMin {
-                sqlite3_bind_int(stmt, 6, Int32(m))
-            } else {
-                sqlite3_bind_null(stmt, 6)
-            }
-            sqlite3_bind_int64(stmt, 7, sqlite3_int64(nextPosition))
-
+            bind(stmt, 1, text: draft.name)
+            bind(stmt, 2, text: draft.question)
+            bind(stmt, 3, text: draft.notes)
+            bind(stmt, 4, int: draft.reminderDays)
+            bind(stmt, 5, int: draft.reminderHour)
+            bind(stmt, 6, int: draft.reminderMin)
+            sqlite3_bind_int64(stmt, 7, sqlite3_int64(nextHabitPosition()))
+            bind(stmt, 8, text: newHabitUUID())
             _ = sqlite3_step(stmt)
         } else {
             print(
@@ -528,6 +557,11 @@ class DatabaseManager: ObservableObject {
         }
         sqlite3_finalize(stmt)
         reload()
+    }
+
+    /// Loop stores UUIDs as 32 lowercase hex characters, without dashes.
+    private func newHabitUUID() -> String {
+        UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 
 
@@ -659,31 +693,12 @@ class DatabaseManager: ObservableObject {
 
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(
-                stmt, 1, (draft.name as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(
-                stmt, 2, (draft.question as NSString).utf8String, -1, nil)
-            if !draft.notes.isEmpty {
-                sqlite3_bind_text(
-                    stmt, 3, (draft.notes as NSString).utf8String, -1, nil)
-            } else {
-                sqlite3_bind_null(stmt, 3)
-            }
-            if let d = draft.reminderDays {
-                sqlite3_bind_int(stmt, 4, Int32(d))
-            } else {
-                sqlite3_bind_null(stmt, 4)
-            }
-            if let h = draft.reminderHour {
-                sqlite3_bind_int(stmt, 5, Int32(h))
-            } else {
-                sqlite3_bind_null(stmt, 5)
-            }
-            if let m = draft.reminderMin {
-                sqlite3_bind_int(stmt, 6, Int32(m))
-            } else {
-                sqlite3_bind_null(stmt, 6)
-            }
+            bind(stmt, 1, text: draft.name)
+            bind(stmt, 2, text: draft.question)
+            bind(stmt, 3, text: draft.notes)
+            bind(stmt, 4, int: draft.reminderDays)
+            bind(stmt, 5, int: draft.reminderHour)
+            bind(stmt, 6, int: draft.reminderMin)
             sqlite3_bind_int(stmt, 7, Int32(habitId))
 
             _ = sqlite3_step(stmt)
@@ -693,6 +708,29 @@ class DatabaseManager: ObservableObject {
                 String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(stmt)
+    }
+
+    // MARK: - Binding helpers
+
+    /// SQLite must copy bound strings: the Swift values are gone by the time
+    /// the statement runs.
+    private static let transient = unsafeBitCast(
+        -1, to: sqlite3_destructor_type.self)
+
+    private func bind(_ stmt: OpaquePointer?, _ index: Int32, text value: String?) {
+        if let value, !value.isEmpty {
+            sqlite3_bind_text(stmt, index, value, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(stmt, index)
+        }
+    }
+
+    private func bind(_ stmt: OpaquePointer?, _ index: Int32, int value: Int?) {
+        if let value {
+            sqlite3_bind_int(stmt, index, Int32(value))
+        } else {
+            sqlite3_bind_null(stmt, index)
+        }
     }
 
 
