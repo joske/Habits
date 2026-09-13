@@ -12,6 +12,7 @@ struct ContentView: View {
     @StateObject private var databaseManager = DatabaseManager()
     @StateObject private var notificationManager = NotificationManager.shared
     @State private var showingAddHabit = false
+    @State private var showingSettings = false
     @State private var showingImporter = false
     @State private var importError: String?
     @State private var habitPendingDelete: Habit?
@@ -54,6 +55,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingAddHabit) {
                 addHabitSheet
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
             }
             .fileExporter(
                 isPresented: $showingExporter,
@@ -162,6 +166,12 @@ struct ContentView: View {
 
             Menu {
                 Toggle("Show Archived", isOn: $databaseManager.showArchived)
+
+                Button {
+                    showingSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gear")
+                }
 
                 Divider()
 
