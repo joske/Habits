@@ -10,6 +10,7 @@ import SwiftUI
 
 struct HabitStrengthChart: View {
     let scores: [Score]  // chronological scores (oldest → newest)
+    let color: Color
 
     var body: some View {
         Chart {
@@ -19,7 +20,7 @@ struct HabitStrengthChart: View {
                     y: .value("Strength", score.value)
                 )
                 .interpolationMethod(.monotone)
-                .foregroundStyle(.blue)
+                .foregroundStyle(color)
 
                 AreaMark(
                     x: .value("Day", score.timestamp.date),
@@ -28,7 +29,7 @@ struct HabitStrengthChart: View {
                 .interpolationMethod(.monotone)
                 .foregroundStyle(
                     .linearGradient(
-                        colors: [.blue.opacity(0.3), .clear],
+                        colors: [color.opacity(0.3), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )

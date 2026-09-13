@@ -18,7 +18,7 @@ struct HabitDetailView: View {
         ScrollView {
             Text("Score").font(.headline)
             let scores = databaseManager.scoresForHabit(habit, days: 365)
-            HabitStrengthChart(scores: scores)
+            HabitStrengthChart(scores: scores, color: habit.tint)
 
             if let fresh = databaseManager.habits.first(where: {
                 $0.id == habit.id

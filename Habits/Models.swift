@@ -44,6 +44,7 @@ struct HabitDraft {
     var name: String
     var question: String
     var notes: String
+    var color: Int
     var reminderDays: Int?
     var reminderHour: Int?
     var reminderMin: Int?
@@ -52,6 +53,7 @@ struct HabitDraft {
         name: String = "",
         question: String = "",
         notes: String = "",
+        color: Int = HabitPalette.defaultIndex,
         reminderDays: Int? = nil,
         reminderHour: Int? = nil,
         reminderMin: Int? = nil
@@ -59,6 +61,7 @@ struct HabitDraft {
         self.name = name
         self.question = question
         self.notes = notes
+        self.color = color
         self.reminderDays = reminderDays
         self.reminderHour = reminderHour
         self.reminderMin = reminderMin
@@ -69,6 +72,7 @@ struct HabitDraft {
             name: habit.name,
             question: habit.question ?? "",
             notes: habit.description ?? "",
+            color: habit.color,
             reminderDays: habit.hasReminder ? habit.reminderDays : nil,
             reminderHour: habit.hasReminder ? habit.reminderHour : nil,
             reminderMin: habit.hasReminder ? habit.reminderMin : nil

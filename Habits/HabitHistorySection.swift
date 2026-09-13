@@ -17,7 +17,7 @@ struct HabitHistorySection: View {
         // Chart
         MonthlyHistoryChart(
             buckets: database.monthBuckets(for: habit, monthsBack: monthsBack),
-            barColor: Color.blue
+            barColor: habit.tint
         )
         .padding(.horizontal)
 

@@ -17,6 +17,7 @@ struct EditHabitView: View {
     @State private var name: String
     @State private var question: String
     @State private var notes: String
+    @State private var color: Int
 
     // Reminder UI state
     @State private var hasReminder: Bool
@@ -29,6 +30,7 @@ struct EditHabitView: View {
         _name = State(initialValue: habit.name)
         _question = State(initialValue: habit.question ?? "")
         _notes = State(initialValue: habit.description ?? "")
+        _color = State(initialValue: habit.color)
 
         let hr = habit.reminderHour ?? 8
         let mn = habit.reminderMin ?? 0
@@ -58,6 +60,10 @@ struct EditHabitView: View {
                         .lineLimit(3, reservesSpace: true)
                 }
 
+                Section("Color") {
+                    ColorPalettePicker(selection: $color)
+                }
+
                 Section("Reminder") {
                     Toggle("Enable reminder", isOn: $hasReminder)
                     if hasReminder {
@@ -80,6 +86,7 @@ struct EditHabitView: View {
                             name: name,
                             question: question,
                             notes: notes,
+                            color: color,
                             reminderDays: hasReminder ? bitmask(from: dayToggles) : nil,
                             reminderHour: hasReminder ? comps.hour : nil,
                             reminderMin: hasReminder ? comps.minute : nil

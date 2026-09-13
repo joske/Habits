@@ -17,7 +17,7 @@ struct HabitRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(habit.name)
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(habit.tint)
 
                 if let question = habit.question, !question.isEmpty {
                     Text(question)
@@ -39,7 +39,7 @@ struct HabitRowView: View {
             Spacer(minLength: 8)
 
             HabitHistoryStrip(
-                color: Color.green,
+                color: habit.tint,
                 completions: completions,
                 onToggleDay: onToggleDay
             )

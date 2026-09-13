@@ -12,6 +12,7 @@ struct AddHabitView: View {
     @State private var name: String = ""
     @State private var question: String = ""
     @State private var notes: String = ""
+    @State private var color: Int = HabitPalette.defaultIndex
 
     @State private var reminderEnabled = false
     @State private var reminderTime = Calendar.current.date(from: DateComponents(hour: 9, minute: 0)) ?? Date()
@@ -33,6 +34,10 @@ struct AddHabitView: View {
 
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(3, reservesSpace: true)
+                }
+
+                Section(header: Text("Color")) {
+                    ColorPalettePicker(selection: $color)
                 }
 
                 Section(header: Text("Reminder")) {
@@ -63,6 +68,7 @@ struct AddHabitView: View {
                             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                             question: question.trimmingCharacters(in: .whitespacesAndNewlines),
                             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
+                            color: color,
                             reminderDays: reminderEnabled ? bitmask(from: dayToggles) : nil,
                             reminderHour: reminderEnabled ? comps.hour : nil,
                             reminderMin: reminderEnabled ? comps.minute : nil

@@ -149,6 +149,7 @@ class DatabaseManager: ObservableObject {
         let statements = [
             "UPDATE Habits SET freq_num = 1 WHERE freq_num IS NULL OR freq_num < 1;",
             "UPDATE Habits SET freq_den = 1 WHERE freq_den IS NULL OR freq_den < 1;",
+            "UPDATE Habits SET color = \(HabitPalette.defaultIndex) WHERE color IS NULL;",
             "UPDATE Habits SET archived = 0 WHERE archived IS NULL;",
         ]
         for sql in statements where sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
@@ -536,20 +537,21 @@ class DatabaseManager: ObservableObject {
     func addHabit(_ draft: HabitDraft) {
         let sql = """
                 INSERT INTO Habits
-                (name, question, description, archived, freq_num, freq_den,
+                (name, question, description, color, archived, freq_num, freq_den,
                  reminder_days, reminder_hour, reminder_min, position, uuid)
-                VALUES (?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, 0, 1, 1, ?, ?, ?, ?, ?)
             """
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             bind(stmt, 1, text: draft.name)
             bind(stmt, 2, text: draft.question)
             bind(stmt, 3, text: draft.notes)
-            bind(stmt, 4, int: draft.reminderDays)
-            bind(stmt, 5, int: draft.reminderHour)
-            bind(stmt, 6, int: draft.reminderMin)
-            sqlite3_bind_int64(stmt, 7, sqlite3_int64(nextHabitPosition()))
-            bind(stmt, 8, text: newHabitUUID())
+            sqlite3_bind_int(stmt, 4, Int32(draft.color))
+            bind(stmt, 5, int: draft.reminderDays)
+            bind(stmt, 6, int: draft.reminderHour)
+            bind(stmt, 7, int: draft.reminderMin)
+            sqlite3_bind_int64(stmt, 8, sqlite3_int64(nextHabitPosition()))
+            bind(stmt, 9, text: newHabitUUID())
             _ = sqlite3_step(stmt)
         } else {
             print(
@@ -686,7 +688,7 @@ class DatabaseManager: ObservableObject {
     func updateHabit(habitId: Int, draft: HabitDraft) {
         let sql = """
                 UPDATE Habits
-                SET name = ?, question = ?, description = ?,
+                SET name = ?, question = ?, description = ?, color = ?,
                     reminder_days = ?, reminder_hour = ?, reminder_min = ?
                 WHERE Id = ?
             """
@@ -696,10 +698,11 @@ class DatabaseManager: ObservableObject {
             bind(stmt, 1, text: draft.name)
             bind(stmt, 2, text: draft.question)
             bind(stmt, 3, text: draft.notes)
-            bind(stmt, 4, int: draft.reminderDays)
-            bind(stmt, 5, int: draft.reminderHour)
-            bind(stmt, 6, int: draft.reminderMin)
-            sqlite3_bind_int(stmt, 7, Int32(habitId))
+            sqlite3_bind_int(stmt, 4, Int32(draft.color))
+            bind(stmt, 5, int: draft.reminderDays)
+            bind(stmt, 6, int: draft.reminderHour)
+            bind(stmt, 7, int: draft.reminderMin)
+            sqlite3_bind_int(stmt, 8, Int32(habitId))
 
             _ = sqlite3_step(stmt)
         } else {

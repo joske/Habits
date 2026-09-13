@@ -100,7 +100,7 @@ struct HabitMonthCalendar: View {
             } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(done ? Color.green : Color.gray)
+                        .fill(done ? habit.tint : Color.gray)
                         .frame(height: 28)
                     Text("\(day)")
                         .font(.caption2)
