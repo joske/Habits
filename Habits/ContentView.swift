@@ -140,13 +140,11 @@ struct ContentView: View {
                         dayStart: day,
                         entry: databaseManager.entry(for: habit, dayStart: day)
                     )
-                }
+                },
+                menu: { contextMenuItems(for: habit) }
             )
         }
         .contentShape(Rectangle())
-        .contextMenu {
-            contextMenuItems(for: habit)
-        }
     }
 
     @ViewBuilder

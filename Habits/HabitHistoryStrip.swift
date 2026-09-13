@@ -19,7 +19,13 @@ struct HabitHistoryStrip: View {
     var body: some View {
         HStack(spacing: 8) {
             ForEach((0..<days), id: \.self) { offset in
-                DayBox(entry: entries[offset] ?? .empty, color: color)
+                let entry = entries[offset] ?? DayEntry.empty
+                DayBox(entry: entry, color: color)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier("day-\(offset)")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel(Self.dayLabel(offset))
+                    .accessibilityValue(Self.stateLabel(entry))
                     .onTapGesture {
                         if shortToggle { onToggleDay(offset) } else { onEditDay(offset) }
                     }
@@ -28,6 +34,22 @@ struct HabitHistoryStrip: View {
                     }
             }
         }
+    }
+
+    /// The day this offset stands for, spelled out for VoiceOver.
+    static func dayLabel(_ offset: Int) -> String {
+        let cal = Calendar.current
+        guard let date = cal.date(byAdding: .day, value: -offset, to: Date())
+        else { return "Day" }
+        let df = DateFormatter()
+        df.dateFormat = "EEEE"
+        return offset == 0 ? "Today" : df.string(from: date)
+    }
+
+    static func stateLabel(_ entry: DayEntry) -> String {
+        let state =
+            entry.isYes ? "Done" : (entry.isSkip ? "Skipped" : "Not done")
+        return entry.hasNote ? "\(state), has a note" : state
     }
 
     struct DayBox: View {

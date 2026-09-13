@@ -7,11 +7,14 @@
 
 import SwiftUI
 
-struct HabitRowView: View {
+struct HabitRowView<Menu: View>: View {
     let habit: Habit
     let entries: [Int: DayEntry]
     let onToggleDay: (Int) -> Void   // offset toggled
     let onEditDay: (Int) -> Void     // offset opened in the editor
+    /// Long-pressing a day box toggles it, so the habit's own menu hangs off
+    /// the name and question instead of the whole row.
+    @ViewBuilder let menu: () -> Menu
 
     var body: some View {
         HStack {
@@ -36,6 +39,9 @@ struct HabitRowView: View {
                     .foregroundColor(.blue)
                 }
             }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .contextMenu { menu() }
 
             Spacer(minLength: 8)
 
