@@ -33,6 +33,10 @@ class DatabaseManager: ObservableObject {
     // Map: habitId -> (dayOffset -> value)
     // dayOffset: 0 = today, 1 = yesterday, ...
     @Published var recentCompletions: [Int: [Int: Int]] = [:]
+    /// When true, archived habits are included in `habits`.
+    @Published var showArchived: Bool = false {
+        didSet { loadHabits() }
+    }
 
     init() {
         let fileURL = try! FileManager.default
@@ -343,12 +347,13 @@ class DatabaseManager: ObservableObject {
     func loadHabits() {
         habits.removeAll()
 
+        let filter = showArchived ? "" : "WHERE archived = 0"
         let querySQL = """
             SELECT Id, archived, color, description, freq_den, freq_num, highlight, name,
                    position, reminder_days, reminder_hour, reminder_min, type, target_type,
                    target_value, unit, question, uuid
             FROM Habits
-            WHERE archived = 0
+            \(filter)
             ORDER BY position
             """
 
@@ -711,6 +716,22 @@ class DatabaseManager: ObservableObject {
                 String(cString: sqlite3_errmsg(db)))
         }
         sqlite3_finalize(stmt)
+    }
+
+    // MARK: - Archiving
+
+    func setArchived(_ habit: Habit, archived: Bool) {
+        var stmt: OpaquePointer?
+        let sql = "UPDATE Habits SET archived = ? WHERE Id = ?"
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int(stmt, 1, archived ? 1 : 0)
+            sqlite3_bind_int(stmt, 2, Int32(habit.id))
+            if sqlite3_step(stmt) != SQLITE_DONE {
+                print("setArchived failed:", String(cString: sqlite3_errmsg(db)))
+            }
+        }
+        sqlite3_finalize(stmt)
+        loadHabits()
     }
 
     // MARK: - Binding helpers

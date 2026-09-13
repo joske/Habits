@@ -39,7 +39,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
 
         for habit in habits {
-            guard habit.hasReminder,
+            guard habit.archived == 0,
+                  habit.hasReminder,
                   let hour = habit.reminderHour,
                   let minute = habit.reminderMin else { continue }
 

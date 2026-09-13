@@ -13,6 +13,7 @@ It can import the database of Loop and uses the same schema.
 - calendar view
 - month bar chart
 - habit colors (Loop's palette, light and dark variants)
+- archive habits
 - import loop database export
 - export database as sqlite file
 

@@ -115,6 +115,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private func contextMenuItems(for habit: Habit) -> some View {
+        Button {
+            databaseManager.setArchived(habit, archived: habit.archived == 0)
+            notificationManager.scheduleNotifications(for: databaseManager.habits)
+        } label: {
+            habit.archived == 0
+                ? Label("Archive", systemImage: "archivebox")
+                : Label("Unarchive", systemImage: "arrow.uturn.backward")
+        }
+
         Button(role: .destructive) {
             habitPendingDelete = habit
             showDeleteConfirm = true
@@ -132,19 +141,28 @@ struct ContentView: View {
                     .accessibilityLabel("Add Habit")
             }
 
-            Button {
-                showingImporter = true
-            } label: {
-                Image(systemName: "square.and.arrow.down.on.square")
-                    .accessibilityLabel("Import Database")
-            }
+            Menu {
+                Toggle("Show Archived", isOn: $databaseManager.showArchived)
 
-            Button {
-                handleExport()
+                Divider()
+
+                Button {
+                    showingImporter = true
+                } label: {
+                    Label(
+                        "Import Database",
+                        systemImage: "square.and.arrow.down.on.square")
+                }
+
+                Button {
+                    handleExport()
+                } label: {
+                    Label("Export Database", systemImage: "square.and.arrow.up")
+                }
             } label: {
-                Image(systemName: "square.and.arrow.up")
+                Image(systemName: "ellipsis.circle")
+                    .accessibilityLabel("More")
             }
-            .accessibilityLabel("Export Database")
         }
     }
 

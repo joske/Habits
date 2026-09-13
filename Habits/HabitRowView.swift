@@ -46,5 +46,6 @@ struct HabitRowView: View {
 
         }
         .padding(.vertical, 8)
+        .opacity(habit.archived == 0 ? 1 : 0.45)
     }
 }
