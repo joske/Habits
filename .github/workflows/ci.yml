@@ -51,9 +51,18 @@ jobs:
             -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -resultBundlePath TestResults.xcresult \
+            -derivedDataPath build \
             -skip-testing:HabitsUITests \
             CODE_SIGNING_ALLOWED=NO \
             | "$FMT"
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Habits-simulator-app-${{ github.sha }}
+          path: build/Build/Products/Debug-iphonesimulator/Habits.app
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload result bundle
         if: always()
@@ -78,8 +87,26 @@ jobs:
             -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             | "$FMT"
+
+      - name: Package unsigned .ipa
+        run: |
+          app=build/Build/Products/Release-iphoneos/Habits.app
+          test -d "$app" || { echo "No app bundle at $app" >&2; exit 1; }
+          mkdir -p Payload
+          ditto "$app" Payload/Habits.app
+          ditto -c -k --sequesterRsrc --keepParent Payload Habits-unsigned.ipa
+          ls -lh Habits-unsigned.ipa
+
+      - name: Upload unsigned .ipa
+        uses: actions/upload-artifact@v7
+        with:
+          name: Habits-unsigned-ipa-${{ github.sha }}
+          path: Habits-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
