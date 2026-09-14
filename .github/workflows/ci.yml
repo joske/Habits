@@ -17,9 +17,9 @@ env:
 jobs:
   test:
     name: Build & test (Simulator)
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show toolchain
         run: xcodebuild -version && xcrun simctl list runtimes
@@ -57,7 +57,7 @@ jobs:
 
       - name: Upload result bundle
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TestResults
           path: TestResults.xcresult
@@ -65,9 +65,9 @@ jobs:
 
   build-device:
     name: Build unsigned (device slice)
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build for iOS device without signing
         run: |
